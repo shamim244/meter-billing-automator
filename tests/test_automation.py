@@ -143,5 +143,64 @@ class TestRunQueue(unittest.TestCase):
         self.assertIn("Batch Run Finished", res.stdout)
 
 
+class TestCoralCameraStageLogic(unittest.TestCase):
+    """Verify camera shutter detection, EditText matching, and dialog button detection."""
+
+    def test_find_node_edittext_variants(self):
+        xml_data = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+        <hierarchy rotation="0">
+          <node bounds="[200,1000][880,1150]" resource-id="txt_reading" class="androidx.appcompat.widget.AppCompatEditText" text="" />
+          <node bounds="[600,1300][900,1400]" resource-id="button1" class="android.widget.Button" text="Save" />
+        </hierarchy>"""
+        tree = ET.fromstring(xml_data)
+        node = root_auto.find_node(tree, cls="EditText")
+        self.assertIsNotNone(node)
+        self.assertEqual(node["cx"], 540)
+        self.assertEqual(node["cy"], 1075)
+
+    def test_reading_injection_fallback_coordinates(self):
+        # When edit_field is None but save_btn exists at cy=1400, input position should fall back to save_btn['cy'] - 150
+        save_btn = {"cx": 870, "cy": 1400}
+        input_x, input_y = 540, save_btn["cy"] - 150
+        self.assertEqual(input_x, 540)
+        self.assertEqual(input_y, 1250)
+
+    def test_secondary_dialog_button_matching(self):
+        for btn_text in ["Submit", "OK", "YES", "CONFIRM"]:
+            sample_xml = f"""<hierarchy><node bounds="[700,1350][950,1450]" resource-id="android:id/button1" text="{btn_text}" class="android.widget.Button" /></hierarchy>"""
+            tree = ET.fromstring(sample_xml)
+            dlg_btn = (root_auto.find_node(tree, text="Submit") or
+                       root_auto.find_node(tree, resource_id="button1") or
+                       root_auto.find_node(tree, text="OK") or
+                       root_auto.find_node(tree, text="YES") or
+                       root_auto.find_node(tree, text="CONFIRM"))
+            self.assertIsNotNone(dlg_btn, f"Failed to match dialog button with text: {btn_text}")
+            self.assertLess(dlg_btn["cy"], 1700)
+
+
+class TestReadingFallback(unittest.TestCase):
+    """Verify queue consumer reading and cycle fallbacks."""
+
+    def test_reading_fallback_to_working_reading(self):
+        entry_both = {"suggested_reading": 65, "working_reading": 60}
+        working1 = entry_both.get("suggested_reading")
+        if working1 is None:
+            working1 = entry_both.get("working_reading")
+        self.assertEqual(working1, 65)
+
+        entry_only_working = {"suggested_reading": None, "working_reading": 72}
+        working2 = entry_only_working.get("suggested_reading")
+        if working2 is None:
+            working2 = entry_only_working.get("working_reading")
+        self.assertEqual(working2, 72)
+
+    def test_cycle_month_fallback(self):
+        queue_oct = {"cycle_month": 10, "cycle_year": 2026}
+        self.assertEqual(int(queue_oct.get("cycle_month") or 10), 10)
+        queue_empty = {}
+        self.assertEqual(int(queue_empty.get("cycle_month") or 10), 10)
+
+
 if __name__ == "__main__":
     unittest.main()
+

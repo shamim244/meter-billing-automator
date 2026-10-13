@@ -234,11 +234,11 @@ def handle_coral_camera_stage(reading_kwh=None, timeout=10):
         tree = get_ui_tree()
 
     # 2. Tap shutter button (captureImg)
-    shutter = find_node(tree, resource_id="captureImg")
+    shutter = find_node(tree, resource_id="captureImg") or find_node(tree, text="CAPTURE")
     if shutter:
         shutter_x, shutter_y = shutter['cx'], shutter['cy']
     else:
-        shutter_x, shutter_y = 540, 2180
+        shutter_x, shutter_y = 794, 2256
 
     print(f"  [*] Tapping Camera Shutter at ({shutter_x}, {shutter_y})...")
     adb_shell(f"input tap {shutter_x} {shutter_y}")
@@ -253,23 +253,29 @@ def handle_coral_camera_stage(reading_kwh=None, timeout=10):
         time.sleep(0.6)
         tree = get_ui_tree()
         save_btn = find_node(tree, text="Save") or find_node(tree, resource_id="button1")
-        edit_field = find_node(tree, cls="android.widget.EditText") or find_node(tree, resource_id="txt_reading") or find_node(tree, resource_id="input")
+        edit_field = find_node(tree, cls="EditText") or find_node(tree, resource_id="txt_reading") or find_node(tree, resource_id="input")
         if save_btn or edit_field:
             dialog_ready = True
             break
 
     if not dialog_ready:
         print("  [!] Reading entry dialog did not appear after shutter, trying fallback tap...")
-        adb_shell("input tap 540 2180")
+        adb_shell(f"input tap {shutter_x} {shutter_y}")
         time.sleep(0.8)
         tree = get_ui_tree()
         save_btn = find_node(tree, text="Save") or find_node(tree, resource_id="button1")
-        edit_field = find_node(tree, cls="android.widget.EditText")
+        edit_field = find_node(tree, cls="EditText") or find_node(tree, resource_id="txt_reading") or find_node(tree, resource_id="input")
 
     # 4. Inject reading_kwh if provided
-    if reading_kwh is not None and edit_field:
-        print(f"  [*] Injecting pre-calculated KWH Reading: {reading_kwh}...")
-        adb_shell(f"input tap {edit_field['cx']} {edit_field['cy']}")
+    if reading_kwh is not None:
+        if edit_field:
+            input_x, input_y = edit_field['cx'], edit_field['cy']
+        elif save_btn:
+            input_x, input_y = 540, save_btn['cy'] - 150
+        else:
+            input_x, input_y = 540, 1200
+        print(f"  [*] Injecting pre-calculated KWH Reading: {reading_kwh} at ({input_x}, {input_y})...")
+        adb_shell(f"input tap {input_x} {input_y}")
         time.sleep(0.15)
         dpad_del = " ".join(["67"] * 15)
         adb_shell(f"input keyevent --delay 2 123 {dpad_del}; input text {reading_kwh}; input keyevent 4")
@@ -295,10 +301,14 @@ def handle_coral_camera_stage(reading_kwh=None, timeout=10):
             break
 
         tree = get_ui_tree()
-        # Look for dialog Submit button (e.g. android:id/button1 with text 'Submit' or centered around 870, 1397)
-        dlg_submit = find_node(tree, text="Submit") or find_node(tree, resource_id="button1")
+        # Look for dialog Submit / OK / Yes button (e.g. android:id/button1 with text 'Submit' or centered around 870, 1397)
+        dlg_submit = (find_node(tree, text="Submit") or
+                      find_node(tree, resource_id="button1") or
+                      find_node(tree, text="OK") or
+                      find_node(tree, text="YES") or
+                      find_node(tree, text="CONFIRM"))
         if dlg_submit and dlg_submit.get("cy", 0) < 1700:
-            print(f"  [*] Secondary popup detected: Tapping Submit at ({dlg_submit['cx']}, {dlg_submit['cy']})...")
+            print(f"  [*] Secondary popup detected: Tapping {dlg_submit.get('text', 'Submit')} at ({dlg_submit['cx']}, {dlg_submit['cy']})...")
             adb_shell(f"input tap {dlg_submit['cx']} {dlg_submit['cy']}")
             time.sleep(1.0)
             continue
@@ -739,7 +749,7 @@ def process_consumer_pipeline(consumer_no, reading_kwh=None, meter_type="NORMAL"
     time.sleep(0.4)
     final_act = adb_shell("dumpsys activity activities | grep topResumedActivity")
     success = False
-    if "ScanMeterActivity" in final_act or "MeterReadingActivity" in final_act:
+    if "ScanMeterActivity" in final_act or "MeterReadingActivity" in final_act or "ScanMeterActivity" in act or "MeterReadingActivity" in act:
         print(f"\n>>> [SUCCESS] Reached Coral Stage in {total_time}s! <<<\n")
         success = True
     else:

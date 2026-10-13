@@ -59,6 +59,8 @@ def main():
         print(f"\n--- [{idx}/{len(consumers)}] CA={ca} ({name})---")
 
         working = entry.get("suggested_reading")
+        if working is None:
+            working = entry.get("working_reading")
         basis = str(entry.get("billing_basis") or "").upper()
         meter_type = "DEFECTIVE" if basis in ["MD", "MB", "DEFECTIVE"] else "NORMAL"
         print(f"[*] Meter Type: {meter_type} (Billing Basis: {basis or 'OK'})")
@@ -83,8 +85,8 @@ def main():
         )
 
         status = "submitted" if ok else "doubt"
-        cycle_month = int(entry.get("billing_month") or queue.get("cycle_month", 8))
-        cycle_year = int(entry.get("billing_year") or queue.get("cycle_year", 2026))
+        cycle_month = int(entry.get("billing_month") or queue.get("cycle_month") or 10)
+        cycle_year = int(entry.get("billing_year") or queue.get("cycle_year") or 2026)
 
         # Immediate real-time update to SaaS platform
         try:
@@ -122,8 +124,8 @@ def main():
     # Batch upload the verdicts if we have any
     if reviews:
         print("[+] Submitting batch sync…")
-        c_m = int(queue.get("cycle_month", 8))
-        c_y = int(queue.get("cycle_year", 2026))
+        c_m = int(queue.get("cycle_month") or 10)
+        c_y = int(queue.get("cycle_year") or 2026)
         try:
             resp = client.batch_sync(billing_month=c_m, billing_year=c_y, reviews=reviews)
             print("[✓] Batch sync result:", json.dumps(resp, indent=2))
