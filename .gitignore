@@ -1,0 +1,32 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Large binaries, decompiled apps, tools, and archives
+reading-meter-app.rar
+tools/
+apk/
+archive/
+extracted/
+extracted_coral/
+
+# Logs and screenshots/captures
+logs/
+*.log
+*.sqlite3
+*.png
+*.jpg
+*.jpeg
+*.mp4
+
+# IDE and agent directories
+.agent/
+.claude/
+chat/.agent/
