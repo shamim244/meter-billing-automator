@@ -38,15 +38,16 @@ def check_device():
                 active_devices.append(serial)
 
     if not active_devices:
-        default_target = os.environ.get("ADB_DEVICE", "192.168.9.40:5555")
-        subprocess.run(["adb", "connect", default_target], capture_output=True)
-        time.sleep(0.5)
-        res = subprocess.run(["adb", "devices"], capture_output=True, text=True).stdout
-        lines = [line.strip() for line in res.splitlines() if line.strip() and not line.startswith("List of")]
-        for line in lines:
-            parts = line.split()
-            if len(parts) >= 2 and parts[1] == "device":
-                active_devices.append(parts[0])
+        default_target = os.environ.get("ADB_DEVICE_SERIAL") or os.environ.get("ADB_DEVICE", "192.168.9.40:5555")
+        if default_target:
+            subprocess.run(["adb", "connect", default_target], capture_output=True)
+            time.sleep(0.5)
+            res = subprocess.run(["adb", "devices"], capture_output=True, text=True).stdout
+            lines = [line.strip() for line in res.splitlines() if line.strip() and not line.startswith("List of")]
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == "device":
+                    active_devices.append(parts[0])
 
     if not active_devices:
         print("[!] No active ADB device found.")
@@ -198,119 +199,6 @@ def find_node(tree, resource_id=None, text=None, cls=None, content_desc=None):
                     pass
     return None
 
-# ==============================================================================
-# SITE OBSERVATION DICTIONARIES & SELECTION HELPERS
-# ==============================================================================
-NORMAL_SITE_OBSERVATIONS = [
-    "NOT PRESENT IN MRU",            # index 0  -> 1 DPAD_DOWN
-    "DISCONNECTED AT SITE",          # index 1  -> 2 DPAD_DOWN
-    "SMART METER INSTALLED AT SITE", # index 2  -> 3 DPAD_DOWN
-    "APPROACH PATH NOT AVAILABLE",   # index 3  -> 4 DPAD_DOWN
-    "WATER LOGGING AT SITE",         # index 4  -> 5 DPAD_DOWN
-    "DEMOLISHED PREMISES",           # index 5  -> 6 DPAD_DOWN
-    "METER NOT ACCESSIBLE",          # index 6  -> 7 DPAD_DOWN
-    "METER NOT IN USE",              # index 7  -> 8 DPAD_DOWN
-    "METER NOT AT SITE",             # index 8  -> 9 DPAD_DOWN
-    "UNTRACE",                       # index 9  -> 10 DPAD_DOWN
-    "BOX BROKEN",                    # index 10 -> 11 DPAD_DOWN
-    "METER SEAL BROKEN",             # index 11 -> 12 DPAD_DOWN (Defective Seal)
-    "TERMINAL SEAL BROKEN",          # index 12 -> 13 DPAD_DOWN (Defective Seal)
-    "BOX SEAL BROKEN",               # index 13 -> 14 DPAD_DOWN (Defective Seal)
-    "FULL IN USE",                   # index 14 -> 15 DPAD_DOWN
-    "LESS IN USE",                   # index 15 -> 16 DPAD_DOWN
-    "METER NUMBER MISMATCH",         # index 16 -> 17 DPAD_DOWN
-    "EARTH LED GLOWING",             # index 17 -> 18 DPAD_DOWN
-    "OK",                            # index 18 -> 19 DPAD_DOWN (Default)
-    "NOT ACCESSIBLE",                # index 19 -> 20 DPAD_DOWN
-]
-
-DEFECTIVE_SITE_OBSERVATIONS = [
-    "METER IS OK",                   # index 0 -> 1 DPAD_DOWN
-    "FIGURE UPSET",                  # index 1 -> 2 DPAD_DOWN
-    "METER STOP",                    # index 2 -> 3 DPAD_DOWN
-    "METER FALLEN",                  # index 3 -> 4 DPAD_DOWN
-    "GLASS BROKEN",                  # index 4 -> 5 DPAD_DOWN
-    "DEFECTIVE",                     # index 5 -> 6 DPAD_DOWN (Default for defective)
-]
-
-def get_site_obs_dpad_keys(obs_name=None, is_defective=False):
-    """
-    Calculates the exact DPAD down key sequence to select the targeted site observation
-    in NBPDCL BillingManual dropdown popup. Returns string of keycodes e.g. '20 20 ... 66'.
-    """
-    clean_name = str(obs_name or "").strip().upper()
-
-    if is_defective:
-        # Options under METER DEFECTIVE
-        target_idx = 5  # Default to "DEFECTIVE"
-        if clean_name:
-            if "GLASS" in clean_name or "BROKEN" in clean_name:
-                target_idx = 4  # "GLASS BROKEN"
-            elif "FALL" in clean_name:
-                target_idx = 3  # "METER FALLEN"
-            elif "STOP" in clean_name:
-                target_idx = 2  # "METER STOP"
-            elif "FIGURE" in clean_name or "UPSET" in clean_name:
-                target_idx = 1  # "FIGURE UPSET"
-            elif clean_name == "OK" or "METER IS OK" in clean_name:
-                target_idx = 0  # "METER IS OK"
-            else:
-                target_idx = 5  # "DEFECTIVE"
-        dpad_count = target_idx + 1
-        return " ".join(["20"] * dpad_count) + " 66"
-
-    else:
-        # Options under NORMAL
-        target_idx = 18  # Default to "OK"
-        if clean_name:
-            if "TERMINAL SEAL" in clean_name:
-                target_idx = 12  # "TERMINAL SEAL BROKEN"
-            elif "BOX SEAL" in clean_name:
-                target_idx = 13  # "BOX SEAL BROKEN"
-            elif "METER SEAL" in clean_name or (("SEAL" in clean_name or "DEFECTIVE SEAL" in clean_name) and "BOX" not in clean_name):
-                target_idx = 11  # "METER SEAL BROKEN" (Defective Seal)
-            elif "BOX BROKEN" in clean_name:
-                target_idx = 10  # "BOX BROKEN"
-            elif "SMART" in clean_name:
-                target_idx = 2
-            elif "DISCONNECT" in clean_name:
-                target_idx = 1
-            elif "NOT PRESENT" in clean_name:
-                target_idx = 0
-            elif "APPROACH" in clean_name:
-                target_idx = 3
-            elif "WATER" in clean_name:
-                target_idx = 4
-            elif "DEMOLISH" in clean_name:
-                target_idx = 5
-            elif "NOT ACCESSIBLE" in clean_name:
-                target_idx = 19
-            elif "NOT IN USE" in clean_name:
-                target_idx = 7
-            elif "NOT AT SITE" in clean_name:
-                target_idx = 8
-            elif "UNTRACE" in clean_name:
-                target_idx = 9
-            elif "FULL" in clean_name:
-                target_idx = 14
-            elif "LESS" in clean_name:
-                target_idx = 15
-            elif "MISMATCH" in clean_name:
-                target_idx = 16
-            elif "EARTH" in clean_name:
-                target_idx = 17
-            elif clean_name == "OK":
-                target_idx = 18
-            else:
-                # Direct match lookup
-                for idx, opt in enumerate(NORMAL_SITE_OBSERVATIONS):
-                    if clean_name in opt or opt in clean_name:
-                        target_idx = idx
-                        break
-
-        dpad_count = target_idx + 1
-        return " ".join(["20"] * dpad_count) + " 66"
-
 def handle_coral_camera_stage(reading_kwh=None, timeout=10):
     """
     Phase 2 - Step 1: Coral Camera (ScanMeterActivity)
@@ -379,7 +267,7 @@ def handle_coral_camera_stage(reading_kwh=None, timeout=10):
         edit_field = find_node(tree, cls="android.widget.EditText")
 
     # 4. Inject reading_kwh if provided
-    if reading_kwh and edit_field:
+    if reading_kwh is not None and edit_field:
         print(f"  [*] Injecting pre-calculated KWH Reading: {reading_kwh}...")
         adb_shell(f"input tap {edit_field['cx']} {edit_field['cy']}")
         time.sleep(0.15)
@@ -679,7 +567,7 @@ def handle_nbpdcl_final_submit(timeout=10):
 # ==============================================================================
 DEFAULT_USE_DUMP = True
 
-def process_consumer_pipeline(consumer_no, reading_kwh=None, meter_type="NORMAL", site_obs=None, use_dump=DEFAULT_USE_DUMP, auto_back=False, auto_submit=False):
+def process_consumer_pipeline(consumer_no, reading_kwh=None, meter_type="NORMAL", use_dump=DEFAULT_USE_DUMP, auto_back=False, auto_submit=False):
     t0 = time.time()
     if not check_device():
         return False
@@ -690,9 +578,8 @@ def process_consumer_pipeline(consumer_no, reading_kwh=None, meter_type="NORMAL"
     type_label = "DEFECTIVE METER" if is_defective else "NORMAL METER"
     mode_label = "Adaptive Dump (99.99% Acc)" if use_dump else "Blind Fixed Turbo (~8s)"
     action_label = "Pre-Staging (Auto-Back)" if auto_back else "Field Mode (Stay on Camera)"
-    target_obs = site_obs or ("DEFECTIVE" if is_defective else "OK")
     print(f"\n" + "="*60)
-    print(f" [*] PROCESSING CONSUMER: {consumer_no} | {type_label} (Site Obs: {target_obs}) | {mode_label} | {action_label}")
+    print(f" [*] PROCESSING CONSUMER: {consumer_no} | {type_label} | {mode_label} | {action_label}")
     print("="*60)
 
     # 1. Clean return to ConsumerSearchActivity
@@ -765,61 +652,71 @@ def process_consumer_pipeline(consumer_no, reading_kwh=None, meter_type="NORMAL"
 
         # Exact mathematical coordinates from dump:
         ps_arrow_x, ps_arrow_y = ps["arrow_x"], ps["cy"]
-        obs_arrow_x, obs_cy = obs["arrow_x"], obs["cy"]
+        obs_cx, obs_cy = obs["cx"], obs["cy"]
         loc_arrow_x, loc_arrow_y = loc["arrow_x"], loc["cy"]
+        loc_opt_x = loc["cx"]
         kwh_x, kwh_y = 408, loc["cy"] + 189
 
         if is_defective:
-            print(f"  [*] Defective Meter Mode: Selecting METER DEFECTIVE, {target_obs}, and Inside...")
-            obs_dpad = get_site_obs_dpad_keys(target_obs, is_defective=True)
+            print("  [*] Defective Meter Mode: Selecting METER DEFECTIVE, DEFECTIVE, and Inside...")
+            dpad_bottom = " ".join(["20"] * 10)
             flow = (
-                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps['cx']} 1965; sleep 0.45; "
-                f"input tap {obs_arrow_x} {obs_cy}; sleep 0.4; input keyevent --delay 15 {obs_dpad}; sleep 0.45; "
-                f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input keyevent 20 66; sleep 0.45; "
+                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps['cx']} 1950; sleep 0.45; "
+                f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 15 {dpad_bottom} 66; sleep 0.45; "
+                f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input tap {loc_opt_x} 1790; sleep 0.45; "
                 f"input tap {kwh_x} {kwh_y}"
             )
         else:
+            ps_opt_x, ps_opt_y = ps["cx"], ps["y2"] + 50
+            if loc["y2"] > 2070:
+                loc_opt_y = 1790
+            else:
+                loc_opt_y = loc["y2"] + 40
+
             # Smart Pre-Fill Fast-Path:
-            is_prefilled = (obs.get("text") == "OK" and loc.get("text") == "Inside" and target_obs == "OK")
+            is_prefilled = (obs.get("text") == "OK" and loc.get("text") == "Inside")
             if is_prefilled:
                 print("  [+] PRE-FILLED CACHE DETECTED! Site Observation (OK) & Location (Inside) already set.")
                 print("  [*] Fast-Path: Selecting ONLY NORMAL -> Camera (~3.5s)...")
                 flow = (
-                    f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps['cx']} 1870; sleep 0.4; "
+                    f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps_opt_x} {ps_opt_y}; sleep 0.4; "
                     f"input tap {kwh_x} {kwh_y}"
                 )
             else:
-                print(f"  [*] Fresh Consumer: Selecting NORMAL, {target_obs}, and Inside...")
-                obs_dpad = get_site_obs_dpad_keys(target_obs, is_defective=False)
+                print("  [*] Fresh Consumer: Selecting NORMAL, OK, and Inside...")
+                dpad_cmds = " ".join(["20"] * 30)
                 flow = (
-                    f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps['cx']} 1870; sleep 0.45; "
-                    f"input tap {obs_arrow_x} {obs_cy}; sleep 0.4; input keyevent --delay 15 {obs_dpad}; sleep 0.45; "
-                    f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input keyevent 20 66; sleep 0.45; "
+                    f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps_opt_x} {ps_opt_y}; sleep 0.45; "
+                    f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 10 {dpad_cmds} 19 66; sleep 0.45; "
+                    f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input tap {loc_opt_x} {loc_opt_y}; sleep 0.45; "
                     f"input tap {kwh_x} {kwh_y}"
                 )
     else:
         # 3. Blind Fixed Mode: Zero Dumps, Zero Scrolls (Turbo speed ~8s)
         print("  [3] Blind Fixed Mode: Skipping UI dump (Turbo ~8s)...")
         t_dump_end = time.time()
-        ps_arrow_x, ps_arrow_y = 976, 1789
-        obs_arrow_x, obs_cy = 976, 1915
-        loc_arrow_x, loc_arrow_y = 976, 2041
+        ps_arrow_x, ps_arrow_y = 976, 1816
+        obs_cx, obs_cy = 691, 1942
+        loc_arrow_x, loc_arrow_y = 976, 2068
+        loc_opt_x = 691
         kwh_x, kwh_y = 408, 2257
 
         if is_defective:
-            obs_dpad = get_site_obs_dpad_keys(target_obs, is_defective=True)
+            dpad_bottom = " ".join(["20"] * 10)
             flow = (
-                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap 650 1965; sleep 0.45; "
-                f"input tap {obs_arrow_x} {obs_cy}; sleep 0.4; input keyevent --delay 15 {obs_dpad}; sleep 0.45; "
-                f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input keyevent 20 66; sleep 0.45; "
+                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap 600 1950; sleep 0.45; "
+                f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 15 {dpad_bottom} 66; sleep 0.45; "
+                f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input tap {loc_opt_x} 1790; sleep 0.45; "
                 f"input tap {kwh_x} {kwh_y}"
             )
         else:
-            obs_dpad = get_site_obs_dpad_keys(target_obs, is_defective=False)
+            ps_opt_x, ps_opt_y = 691, 1890
+            loc_opt_y = 1790
+            dpad_cmds = " ".join(["20"] * 30)
             flow = (
-                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap 650 1870; sleep 0.45; "
-                f"input tap {obs_arrow_x} {obs_cy}; sleep 0.4; input keyevent --delay 15 {obs_dpad}; sleep 0.45; "
-                f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input keyevent 20 66; sleep 0.45; "
+                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps_opt_x} {ps_opt_y}; sleep 0.45; "
+                f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 10 {dpad_cmds} 19 66; sleep 0.45; "
+                f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input tap {loc_opt_x} {loc_opt_y}; sleep 0.45; "
                 f"input tap {kwh_x} {kwh_y}"
             )
 
@@ -1134,13 +1031,6 @@ if __name__ == "__main__":
         auto_submit = "--auto-submit" in args or "-a" in args
         is_def = "--defective" in args or "-def" in args or "--def" in args
         meter_type = "DEFECTIVE" if is_def else "NORMAL"
-        site_obs_arg = None
-        if "--site-obs" in args or "-so" in args:
-            flag = "--site-obs" if "--site-obs" in args else "-so"
-            idx = args.index(flag)
-            if idx + 1 < len(args):
-                site_obs_arg = args[idx + 1]
-
         reading_val = None
         if "--reading" in args or "-r" in args:
             flag = "--reading" if "--reading" in args else "-r"
@@ -1158,7 +1048,6 @@ if __name__ == "__main__":
                 ca,
                 reading_kwh=reading_val,
                 meter_type=meter_type,
-                site_obs=site_obs_arg,
                 use_dump=use_dump,
                 auto_back=False,
                 auto_submit=auto_submit or (reading_val is not None) or is_def

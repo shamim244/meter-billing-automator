@@ -38,6 +38,18 @@ def check_device():
                 active_devices.append(serial)
 
     if not active_devices:
+        default_target = os.environ.get("ADB_DEVICE_SERIAL") or os.environ.get("ADB_DEVICE", "192.168.9.40:5555")
+        if default_target:
+            subprocess.run(["adb", "connect", default_target], capture_output=True)
+            time.sleep(0.5)
+            res = subprocess.run(["adb", "devices"], capture_output=True, text=True).stdout
+            lines = [line.strip() for line in res.splitlines() if line.strip() and not line.startswith("List of")]
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == "device":
+                    active_devices.append(parts[0])
+
+    if not active_devices:
         print("[!] No active ADB device found.")
         print("[!] Please check Wi-Fi debugging port and run: adb connect <IP>:<PORT>")
         return False
@@ -255,7 +267,7 @@ def handle_coral_camera_stage(reading_kwh=None, timeout=10):
         edit_field = find_node(tree, cls="android.widget.EditText")
 
     # 4. Inject reading_kwh if provided
-    if reading_kwh and edit_field:
+    if reading_kwh is not None and edit_field:
         print(f"  [*] Injecting pre-calculated KWH Reading: {reading_kwh}...")
         adb_shell(f"input tap {edit_field['cx']} {edit_field['cy']}")
         time.sleep(0.15)
@@ -562,7 +574,7 @@ def process_consumer_pipeline(consumer_no, reading_kwh=None, meter_type="NORMAL"
 
     wake_device()
     dismiss_keyboard()
-    is_defective = (str(meter_type).upper() == "DEFECTIVE")
+    is_defective = (str(meter_type).upper() in ["DEFECTIVE", "MD", "MB"])
     type_label = "DEFECTIVE METER" if is_defective else "NORMAL METER"
     mode_label = "Adaptive Dump (99.99% Acc)" if use_dump else "Blind Fixed Turbo (~8s)"
     action_label = "Pre-Staging (Auto-Back)" if auto_back else "Field Mode (Stay on Camera)"
