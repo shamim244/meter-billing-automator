@@ -1,41 +1,52 @@
 """
-runner.py – Smart Queue Runner orchestrating Screen 1 -> Screen 2 -> Screen 3 -> Screen 4.
-Built on ground-truth Android selectors with stage-only safety by default.
+runner.py – Ground-Truth Modular Smart Runner for NBPDCL Meter Billing.
+Orchestrates Screen 1 (Search), Screen 2 (Form), Screen 3 (Camera & Review), and Screen 4 (Submit).
+Optimized for high-throughput batch prefetching and sub-12s consumer cycles.
 """
 import os
 import sys
 import time
 import argparse
 
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
-
-CHAT_DIR = os.path.join(ROOT_DIR, "chat")
-if CHAT_DIR not in sys.path:
-    sys.path.append(CHAT_DIR)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 try:
-    from nbpdcl_client import NBPDCLClient, build_review
+    from chat.nbpdcl_client import NBPDCLClient, build_review
 except ImportError:
     NBPDCLClient = None
     build_review = None
 
-import uiautomator2 as u2
 from smart_engine.screen1_search import Screen1Search
 from smart_engine.screen2_form import Screen2Form
 from smart_engine.screen3_camera import Screen3Camera
 from smart_engine.screen4_submit import Screen4Submit
 
+try:
+    import uiautomator2 as u2
+except ImportError:
+    u2 = None
+
 class SmartRunner:
-    def __init__(self, mru=None, cycle=None, device_serial="192.168.9.40:5555", dry_run=False, final_submit=False):
-        self.mru = mru or os.environ.get("NBPDCL_MRU_CODE", "8")
-        self.cycle = cycle or os.environ.get("NBPDCL_CYCLE", "OCT-2026")
+    def __init__(self, mru="8", cycle="OCT-2026", device_serial="192.168.9.40:5555", dry_run=False, final_submit=False):
+        self.mru = str(mru)
+        self.cycle = str(cycle)
+        self.device_serial = device_serial
         self.dry_run = dry_run
         self.final_submit = final_submit
-        self.serial = device_serial
 
-        self.d = None if dry_run else u2.connect(device_serial)
+        self.d = None
+        if not dry_run:
+            if u2 is None:
+                raise RuntimeError("uiautomator2 required for live execution. Run 'pip install uiautomator2'.")
+            print(f"[+] Connecting to device: {device_serial}...")
+            self.d = u2.connect(device_serial)
+            try:
+                self.d.set_fastinput_ime(True)
+            except Exception:
+                pass
+
         self.s1 = Screen1Search(device=self.d, serial=device_serial) if not dry_run else None
         self.s2 = Screen2Form(device=self.d, serial=device_serial) if not dry_run else None
         self.s3 = Screen3Camera(device=self.d, serial=device_serial) if not dry_run else None
@@ -54,7 +65,7 @@ class SmartRunner:
             print(f"  [*] [DRY-RUN] Simulated pipeline for CA {ca_number} -> Success")
             return True, "submitted"
 
-        # Screen 1: Search CA and wait for BillingManual
+        # Screen 1: Fast Search CA and wait for BillingManual
         if not self.s1.search_consumer(ca_number):
             print("  [!] Screen 1 Search failed.")
             return False, "pending"
@@ -95,10 +106,11 @@ class SmartRunner:
             print("[+] Queue empty – nothing to do.")
             return {"total": 0, "processed": 0, "failed": 0}
 
-        print(f"[+] {len(consumers)} consumers fetched from SaaS – running modular pipeline…")
+        print(f"[+] {len(consumers)} consumers fetched from SaaS – running fast modular pipeline…")
         processed = 0
         failed = 0
         reviews = []
+        batch_t0 = time.time()
 
         for idx, entry in enumerate(consumers, 1):
             ca = entry["ca_number"]
@@ -130,11 +142,15 @@ class SmartRunner:
             res = self.client.submit_batch_sync(reviews)
             print(f"[✓] SaaS Sync complete: {res.get('synced_count', 0)} synced.")
 
-        print(f"\n[+] Batch Run Finished: {processed} / {len(consumers)} processed, {failed} failed.")
-        return {"total": len(consumers), "processed": processed, "failed": failed}
+        batch_elapsed = round(time.time() - batch_t0, 2)
+        avg_speed = round(batch_elapsed / max(processed, 1), 2)
+        print(f"\n{'='*60}")
+        print(f"[+] Batch Finished: {processed}/{len(consumers)} in {batch_elapsed}s (Avg: {avg_speed}s/meter, {failed} failed)")
+        print(f"{'='*60}\n")
+        return {"total": len(consumers), "processed": processed, "failed": failed, "elapsed_seconds": batch_elapsed}
 
 def main():
-    parser = argparse.ArgumentParser(description="Smart Engine V2 - Ground-Truth Modular Runner")
+    parser = argparse.ArgumentParser(description="Smart Engine V2 - Ground-Truth High-Speed Runner")
     parser.add_argument("--mru", default="8", help="Target MRU code")
     parser.add_argument("--cycle", default="OCT-2026", help="Billing cycle")
     parser.add_argument("--limit", type=int, default=1, help="Max consumers to process")
