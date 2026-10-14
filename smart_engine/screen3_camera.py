@@ -1,6 +1,7 @@
 """
-screen3_camera.py – Screen 3: MR Bharat Camera & Review Controller (in.coral.bpdcl).
+screen3_camera.py – Screen 3: High-Speed MR Bharat Camera & Review Controller (in.coral.bpdcl).
 Captures photo, enters reading, resolves secondary popup, and overrides doubt alerts.
+Uses non-blocking element waiters and an event-driven race condition watcher to minimize latency.
 """
 import os
 import sys
@@ -13,33 +14,30 @@ class Screen3Camera:
         self.serial = serial
 
     def handle_camera_and_review(self, reading_kwh=1355, timeout=12.0):
-        print(f"\n[*] [Screen 3] MR Bharat: Camera & Reading Entry ({reading_kwh} KWH)...")
+        t0 = time.time()
+        print(f"\n[*] [Screen 3] MR Bharat: Fast Camera & Reading Entry ({reading_kwh} KWH)...")
 
         # 1. If on MeterReadingActivity with CAPTURE button, click it
         pre_capture = self.d(resourceId="in.coral.bpdcl:id/capture_readings_btn")
-        if pre_capture.exists(timeout=2.0):
+        if pre_capture.exists(timeout=0.3):
             print("  [1] Tapping initial CAPTURE button...")
             pre_capture.click()
-            time.sleep(0.8)
 
-        # 2. On ScanMeterActivity: Trigger Shutter
+        # 2. Trigger Camera Shutter (captureImg)
         print("  [2] Triggering Camera Shutter (captureImg)...")
         shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
-        if shutter.exists(timeout=3.0):
+        if shutter.wait(timeout=3.0):
             shutter.click()
         else:
             self.d.click(794, 2256)
 
-        time.sleep(1.0)
-
-        # 3. Reading Input Dialog
+        # 3. Wait for reading input dialog to enter reading
         print(f"  [3] Waiting for reading input dialog to enter {reading_kwh}...")
         input_field = self.d(resourceId="in.coral.bpdcl:id/input")
-        if input_field.exists(timeout=5.0):
+        if input_field.wait(timeout=4.5):
             input_field.set_text(str(reading_kwh))
-            time.sleep(0.3)
             save_btn = self.d(text="Save")
-            if save_btn.exists(timeout=1.5):
+            if save_btn.wait(timeout=1.0):
                 print("  [*] Tapping Save button...")
                 save_btn.click()
             else:
@@ -48,62 +46,75 @@ class Screen3Camera:
             print("  [!] Reading input field not found!")
             return False
 
-        time.sleep(0.8)
+        # 4. Multi-dialog Race Condition Watcher
+        print("  [4] Watching for popups, revalidation alerts, and BillingManual return...")
+        t_loop = time.time()
+        revalidation_handled = False
+        secondary_handled = False
 
-        # 4. Secondary Confirmation Popup ("Electro Mechanical Meter" / "All required parameters")
-        print("  [4] Checking for secondary confirmation popup...")
-        sec_submit = self.d(text="Submit")
-        sec_title = self.d(resourceId="in.coral.bpdcl:id/dialog_title_text")
-        if sec_title.exists(timeout=2.0) or sec_submit.exists(timeout=2.0):
-            print(f"  [+] Secondary popup detected! Tapping Submit...")
-            sec_submit.click_exists(timeout=1.5)
-            time.sleep(0.8)
+        while time.time() - t_loop < timeout:
+            # Check if returned to BillingManual
+            act = ""
+            pkg = ""
+            try:
+                cur = self.d.app_current()
+                act = cur.get("activity", "")
+                pkg = cur.get("package", "")
+            except Exception:
+                pass
 
-        # 5. Review Screen & Revalidation Override (The Doubt Resolver)
-        print("  [5] Review stage: Checking for Revalidation / Doubt warning...")
-        reval_btn = self.d(resourceId="in.coral.bpdcl:id/revalidate_btn")
-        if reval_btn.exists(timeout=3.0):
-            print("  [*] Revalidation required! Executing dynamic override sequence...")
-            reval_btn.click()
-            time.sleep(0.5)
+            if "BillingManual" in act or ("in.phoenix.bpdcl" in pkg and "coral" not in pkg):
+                print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
+                return True
 
-            report_btn = self.d(resourceId="in.coral.bpdcl:id/btn_report")
-            if report_btn.exists(timeout=2.0):
-                report_btn.click()
-                time.sleep(0.4)
+            # Check for Secondary Confirmation Popup ("Electro Mechanical Meter")
+            if not secondary_handled:
+                sec_title = self.d(resourceId="in.coral.bpdcl:id/dialog_title_text")
+                sec_submit = self.d(text="Submit")
+                if sec_title.exists(timeout=0.05) or sec_submit.exists(timeout=0.05):
+                    print("  [+] Secondary confirmation popup detected! Tapping Submit...")
+                    sec_submit.click_exists(timeout=0.5)
+                    secondary_handled = True
+                    time.sleep(0.1)
+                    continue
 
-            correct_opt = self.d(text="Readings are correct")
-            if correct_opt.exists(timeout=2.0):
-                print("  [*] Selected 'Readings are correct' remark.")
-                correct_opt.click()
-                time.sleep(0.4)
+            # Check for Revalidation / Doubt warning
+            if not revalidation_handled:
+                reval_btn = self.d(resourceId="in.coral.bpdcl:id/revalidate_btn")
+                if reval_btn.exists(timeout=0.05):
+                    print("  [*] Revalidation required! Executing dynamic override sequence...")
+                    reval_btn.click()
+                    rep_btn = self.d(resourceId="in.coral.bpdcl:id/btn_report")
+                    if rep_btn.wait(timeout=1.5):
+                        rep_btn.click()
+                    correct_opt = self.d(text="Readings are correct")
+                    if correct_opt.wait(timeout=1.5):
+                        print("  [*] Selected 'Readings are correct' remark.")
+                        correct_opt.click()
+                    # Final submit inside MR Bharat
+                    submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
+                    if submit_btn.wait(timeout=1.5):
+                        print("  [*] Tapping final Submit in MR Bharat...")
+                        submit_btn.click()
+                    revalidation_handled = True
+                    time.sleep(0.1)
+                    continue
 
-            # Final submit inside MR Bharat
+            # Direct Submit button in MR Bharat review screen
             submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
-            if submit_btn.exists(timeout=2.0):
-                print("  [*] Tapping final Submit in MR Bharat...")
-                submit_btn.click()
-        else:
-            # Direct submit if no revalidation required
-            submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
-            if submit_btn.exists(timeout=2.0):
+            if submit_btn.exists(timeout=0.05):
                 print("  [*] Tapping direct Submit in MR Bharat...")
                 submit_btn.click()
+                time.sleep(0.2)
+                continue
 
-        # 6. Verify return to NBPDCL BillingManual
-        print("  [6] Waiting for return to NBPDCL BillingManual...")
-        t_start = time.time()
-        while time.time() - t_start < timeout:
-            cur_act = self.d.app_current().get("activity", "")
-            if "BillingManual" in cur_act:
-                print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t_start, 2)}s! <<<\n")
-                return True
-            time.sleep(0.3)
+            time.sleep(0.08)
 
-        print("  [!] Failed to return to BillingManual.")
+        print("  [!] Timed out in MR Bharat review/submit stage.")
         return False
 
 if __name__ == "__main__":
+    reading = int(sys.argv[1]) if len(sys.argv) > 1 else 1355
     s3 = Screen3Camera()
-    ok = s3.handle_camera_and_review(1355)
+    ok = s3.handle_camera_and_review(reading_kwh=reading)
     sys.exit(0 if ok else 1)
