@@ -1,10 +1,10 @@
 """
-screen1_search.py – Screen 1: Consumer Search Controller (ConsumerSearchActivity).
+screen1_search.py – Screen 1: High-Speed Consumer Search Controller (ConsumerSearchActivity).
+Uses Fast IME and event-driven activity/element waiters to eliminate idle latency.
 """
 import os
 import sys
 import time
-import subprocess
 import uiautomator2 as u2
 
 class Screen1Search:
@@ -13,57 +13,59 @@ class Screen1Search:
         self.serial = serial
 
     def search_consumer(self, ca_number, timeout=8.0):
-        print(f"\n[*] [Screen 1] Searching Consumer CA: {ca_number}...")
-        self.d.screen_on()
+        print(f"\n[*] [Screen 1] Fast Searching Consumer CA: {ca_number}...")
+        try:
+            self.d.screen_on()
+        except Exception:
+            pass
 
-        # 1. Start clean ConsumerSearchActivity
-        subprocess.run([
-            "adb", "-s", self.serial, "shell",
-            "am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top"
-        ], capture_output=True)
-        time.sleep(0.4)
+        # 1. Start clean ConsumerSearchActivity via direct socket
+        try:
+            self.d.app_start("in.phoenix.bpdcl", ".ConsumerSearchActivity", stop=False)
+        except Exception:
+            # Fallback if app_start fails
+            self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
 
-        # 2. Dismiss keyboard
-        self.d.press("back")
-        time.sleep(0.2)
+        # 2. Enable Fast IME to prevent on-screen keyboard from popping up
+        try:
+            self.d.set_fastinput_ime(True)
+        except Exception:
+            pass
 
-        # 3. Type CA number into bh_AccNo1search
+        # 3. Enter CA number into bh_AccNo1search
         input_field = self.d(resourceId="in.phoenix.bpdcl:id/bh_AccNo1search")
-        if input_field.exists(timeout=2.0):
-            input_field.click()
-            time.sleep(0.2)
+        if input_field.wait(timeout=2.5):
             input_field.set_text(str(ca_number))
         else:
-            subprocess.run(["adb", "-s", self.serial, "shell", f"input tap 727 543; input text {ca_number}"], capture_output=True)
-
-        time.sleep(0.2)
-        self.d.press("back")  # Dismiss keyboard
+            # Direct shell input tap fallback
+            self.d.shell(f"input tap 727 543; input text {ca_number}")
 
         # 4. Click Search button
         search_btn = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
-        if search_btn.exists(timeout=1.0):
+        if search_btn.wait(timeout=1.5):
             search_btn.click()
         else:
-            subprocess.run(["adb", "-s", self.serial, "shell", "input tap 450 726"], capture_output=True)
+            self.d.shell("input tap 450 726")
 
-        # 5. Wait for BillingManual
+        # 5. Event-driven wait for BillingManual
         t_start = time.time()
-        while time.time() - t_start < timeout:
-            act = self.d.app_current().get("activity", "")
-            if "BillingManual" in act:
-                print("  [+] BillingManual reached! Waiting 1.1s for GPS settlement...")
-                time.sleep(1.1)
+        # First check with fast wait_activity
+        if self.d.wait_activity(".BillingManual", timeout=timeout):
+            # Wait for form readiness (PresentStatus1 loaded)
+            ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
+            if ps_btn.wait(timeout=3.0):
+                print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
                 return True
+            print("  [+] BillingManual activity reached (ready).")
+            return True
 
-            # Detect error alerts (e.g. invalid data or consumer not found)
-            alert = self.d(resourceId="android:id/alertTitle")
-            if alert.exists(timeout=0.1):
-                msg = self.d(resourceId="android:id/message").get_text() if self.d(resourceId="android:id/message").exists() else ""
-                print(f"  [!] Alert detected: '{alert.get_text()}' - '{msg}'")
-                self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
-                return False
-
-            time.sleep(0.3)
+        # Check for alert errors if wait_activity timed out
+        alert = self.d(resourceId="android:id/alertTitle")
+        if alert.exists(timeout=0.2):
+            msg = self.d(resourceId="android:id/message").get_text() if self.d(resourceId="android:id/message").exists() else ""
+            print(f"  [!] Alert detected: '{alert.get_text()}' - '{msg}'")
+            self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
+            return False
 
         print("  [!] Failed to reach BillingManual within timeout.")
         return False
