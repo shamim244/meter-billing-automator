@@ -41,11 +41,11 @@ class ContextCompressor:
             cls = node.attrib.get("class", "")
             bounds = node.attrib.get("bounds", "")
 
-            # Detect dialog title / message
-            if "alertTitle" in res_id or "title" in res_id.lower():
+            # Detect genuine dialog title / message (only match system alert dialogs)
+            if res_id == "android:id/alertTitle" or res_id.endswith(":id/alertTitle"):
                 if text:
                     alert_title = text
-            elif "message" in res_id.lower() or "alert_message" in res_id.lower():
+            elif res_id == "android:id/message" or res_id.endswith(":id/message"):
                 if text:
                     alert_msg = text
 
