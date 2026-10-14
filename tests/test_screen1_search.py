@@ -40,12 +40,8 @@ class TestScreen1Search(unittest.TestCase):
         res = s1.search_consumer("10230047179")
 
         self.assertTrue(res)
-        mock_d.set_fastinput_ime.assert_called_with(True)
-        mock_d.app_start.assert_called_with(
-            "in.phoenix.bpdcl",
-            ".ConsumerSearchActivity",
-            stop=False
-        )
+        acc_field.set_text.assert_called_with("10230047179")
+        self.assertTrue(any("am start" in str(c) for c in mock_d.shell.call_args_list))
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,18 +19,8 @@ class Screen1Search:
         except Exception:
             pass
 
-        # 1. Start clean ConsumerSearchActivity via direct socket
-        try:
-            self.d.app_start("in.phoenix.bpdcl", ".ConsumerSearchActivity", stop=False)
-        except Exception:
-            # Fallback if app_start fails
-            self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
-
-        # 2. Enable Fast IME to prevent on-screen keyboard from popping up
-        try:
-            self.d.set_fastinput_ime(True)
-        except Exception:
-            pass
+        # 1. Start clean ConsumerSearchActivity directly
+        self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
 
         # 3. Enter CA number into bh_AccNo1search
         input_field = self.d(resourceId="in.phoenix.bpdcl:id/bh_AccNo1search")

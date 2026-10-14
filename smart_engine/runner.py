@@ -42,10 +42,6 @@ class SmartRunner:
                 raise RuntimeError("uiautomator2 required for live execution. Run 'pip install uiautomator2'.")
             print(f"[+] Connecting to device: {device_serial}...")
             self.d = u2.connect(device_serial)
-            try:
-                self.d.set_fastinput_ime(True)
-            except Exception:
-                pass
 
         self.s1 = Screen1Search(device=self.d, serial=device_serial) if not dry_run else None
         self.s2 = Screen2Form(device=self.d, serial=device_serial) if not dry_run else None
