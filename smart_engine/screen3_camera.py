@@ -60,11 +60,44 @@ class Screen3Camera:
             print("  [!] Reading input field not found after camera retries!")
             return False
 
-        # 3. Enter Reading and Save
-        print(f"  [3] Entering reading: {reading_kwh} KWH...")
+        # 3. Enter Reading and Save (Clear all existing text first)
+        print(f"  [3] Injecting KWH Reading: {reading_kwh}...")
+        try:
+            input_field.click()
+            time.sleep(0.15)
+        except Exception:
+            pass
+
+        # Select all and clear existing text / OCR residue
+        try:
+            input_field.clear_text()
+        except Exception:
+            pass
+
+        # Send explicit backspaces to ensure field is 100% clean
+        dpad_del = " ".join(["67"] * 20)
+        self.d.shell(f"input keyevent 123 {dpad_del}")
+
+        # Inject the correct reading
         input_field.set_text(str(reading_kwh))
+        
+        # Verify text was entered; fallback to shell input if needed
+        try:
+            curr_text = input_field.get_text()
+            if not curr_text or curr_text != str(reading_kwh):
+                self.d.shell(f"input text {reading_kwh}")
+        except Exception:
+            pass
+
+        # Dismiss soft keyboard so Save button is not obscured
+        try:
+            self.d.press("back")
+            time.sleep(0.15)
+        except Exception:
+            pass
+
         save_btn = self.d(text="Save")
-        if save_btn.wait(timeout=1.0):
+        if save_btn.wait(timeout=1.5):
             print("  [*] Tapping Save button...")
             save_btn.click()
         else:
