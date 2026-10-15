@@ -23,28 +23,52 @@ class Screen3Camera:
             print("  [1] Tapping initial CAPTURE button...")
             pre_capture.click()
 
-        # 2. Trigger Camera Shutter (captureImg)
-        print("  [2] Triggering Camera Shutter (captureImg)...")
-        shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
-        if shutter.wait(timeout=3.0):
-            shutter.click()
-        else:
-            self.d.click(794, 2256)
-
-        # 3. Wait for reading input dialog to enter reading
-        print(f"  [3] Waiting for reading input dialog to enter {reading_kwh}...")
+        # 2. Trigger Camera Shutter & Wait for Reading Input Dialog
         input_field = self.d(resourceId="in.coral.bpdcl:id/input")
-        if input_field.wait(timeout=4.5):
-            input_field.set_text(str(reading_kwh))
-            save_btn = self.d(text="Save")
-            if save_btn.wait(timeout=1.0):
-                print("  [*] Tapping Save button...")
-                save_btn.click()
+        input_found = False
+
+        for attempt in range(1, 4):
+            print(f"  [2] Camera Capture Attempt {attempt}/3...")
+            shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
+            if shutter.wait(timeout=2.0):
+                shutter.click()
             else:
-                self.d.click(870, 1389)
-        else:
-            print("  [!] Reading input field not found!")
+                self.d.click(794, 2256)
+
+            # Wait up to 3.5s for input dialog or alert
+            t_cap = time.time()
+            while time.time() - t_cap < 3.5:
+                if input_field.exists(timeout=0.1):
+                    input_found = True
+                    break
+
+                # Check if 'Invalid Image' or 'Please capture clear' alert appeared
+                alert = self.d(resourceId="in.coral.bpdcl:id/alertTitle")
+                if alert.exists(timeout=0.05):
+                    msg = self.d(resourceId="android:id/message").get_text() if self.d(resourceId="android:id/message").exists() else ""
+                    print(f"  [!] Camera alert detected: '{msg}'. Dismissing and retrying...")
+                    self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
+                    # Turn on flash on retry
+                    self.d(resourceId="in.coral.bpdcl:id/flash_switch").click_exists(timeout=0.3)
+                    break
+                time.sleep(0.1)
+
+            if input_found:
+                break
+
+        if not input_found and not input_field.wait(timeout=2.0):
+            print("  [!] Reading input field not found after camera retries!")
             return False
+
+        # 3. Enter Reading and Save
+        print(f"  [3] Entering reading: {reading_kwh} KWH...")
+        input_field.set_text(str(reading_kwh))
+        save_btn = self.d(text="Save")
+        if save_btn.wait(timeout=1.0):
+            print("  [*] Tapping Save button...")
+            save_btn.click()
+        else:
+            self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
 
         # 4. Multi-dialog Race Condition Watcher
         print("  [4] Watching for popups, revalidation alerts, and BillingManual return...")
