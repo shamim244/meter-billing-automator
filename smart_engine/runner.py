@@ -38,7 +38,14 @@ class SmartRunner:
         self.dry_run = dry_run
         self.final_submit = final_submit
         self.apply_tuning = apply_tuning
-        self.min_floor = int(min_floor) if min_floor is not None else (int(os.environ.get("NBPDCL_MIN_FLOOR")) if os.environ.get("NBPDCL_MIN_FLOOR") else None)
+        if min_floor is not None:
+            self.min_floor = int(min_floor)
+        elif os.environ.get("NBPDCL_MIN_FLOOR"):
+            self.min_floor = int(os.environ.get("NBPDCL_MIN_FLOOR"))
+        elif self.apply_tuning:
+            self.min_floor = 125
+        else:
+            self.min_floor = None
         self.max_ceiling = int(max_ceiling) if max_ceiling is not None else None
         self.adjust_percent = float(adjust_percent) if adjust_percent is not None else None
         self.target_ca = str(ca).strip() if ca else None
@@ -56,7 +63,41 @@ class SmartRunner:
         self.s4 = Screen4Submit(device=self.d, serial=device_serial) if not dry_run else None
         self.client = NBPDCLClient() if NBPDCLClient else None
 
+        if not dry_run and self.d:
+            try:
+                self.d.screen_on()
+                self.d.shell("svc power stayon true")
+            except Exception:
+                pass
+
+    def ensure_device_unlocked(self, timeout=12.0):
+        if self.dry_run or not self.d:
+            return True
+        try:
+            self.d.screen_on()
+        except Exception:
+            pass
+
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            try:
+                out = self.d.shell("dumpsys window").output or ""
+                if "iskeyguardshowing=true" not in out.lower():
+                    return True
+            except Exception:
+                return True
+            print("\n" + "!" * 60)
+            print(" [⚠️ ACTION REQUIRED] Android device screen is LOCKED!")
+            print(" Please unlock your phone screen so automation can proceed...")
+            print("!" * 60 + "\n")
+            time.sleep(1.5)
+
+        print("[!] Timed out waiting for device unlock.")
+        return False
+
     def process_consumer(self, ca_number, reading_kwh=1355, meter_type="NORMAL"):
+        if not self.ensure_device_unlocked():
+            return False, "doubt"
         t0 = time.time()
         print(f"\n{'='*60}")
         print(f" [*] [SMART RUNNER] CA: {ca_number} | Meter: {meter_type} | Reading: {reading_kwh} KWH")
@@ -126,7 +167,7 @@ class SmartRunner:
                 retry_q = self.client.get_automation_queue(
                     mru_id=self.mru,
                     cycle=self.cycle,
-                    limit=100,
+                    limit=250,
                     apply_tuning=self.apply_tuning,
                     min_units_floor=self.min_floor,
                     max_units_ceiling=self.max_ceiling,
@@ -137,10 +178,30 @@ class SmartRunner:
                 matched = [c for c in retry_consumers if str(c.get("ca_number")).strip() == self.target_ca]
                 if matched:
                     consumers = matched
-
-        if not consumers:
-            print("[+] Queue empty – nothing to do.")
-            return {"total": 0, "processed": 0, "failed": 0}
+                else:
+                    lb = self.client.list_bills(search=self.target_ca, month=10, year=2026)
+                    lb_data = lb.get("data", [])
+                    matched_lb = [b for b in lb_data if str(b.get("ca_number")).strip() == self.target_ca]
+                    if matched_lb:
+                        b = matched_lb[0]
+                        consumers = [{
+                            "bill_id": b.get("id"),
+                            "ca_number": b.get("ca_number"),
+                            "consumer_name": b.get("consumer_name"),
+                            "meter_number": b.get("meter_no"),
+                            "billing_basis": b.get("billing_basis") or "NORMAL",
+                            "previous_reading": b.get("previous_reading"),
+                            "working_reading": b.get("working_reading"),
+                            "base_avg_units": b.get("base_avg_units") or b.get("smart_average_kwh") or 50,
+                            "smart_average_kwh": b.get("smart_average_kwh") or 50,
+                            "suggested_reading": b.get("working_reading") or b.get("suggested_reading"),
+                            "min_avg_units": b.get("min_avg_units"),
+                            "is_clamped_min": True if b.get("min_avg_units") else False,
+                            "review_status": b.get("review_status")
+                        }]
+                    else:
+                        print(f"[!] Target CA {self.target_ca} not found in MRU {self.mru} cycle {self.cycle}.")
+                        return {"total": 0, "processed": 0, "failed": 0}
 
         print(f"[+] {len(consumers)} consumers fetched from SaaS – running fast modular pipeline…")
         processed = 0
@@ -153,11 +214,32 @@ class SmartRunner:
             name = entry.get("consumer_name", "")
             basis = str(entry.get("billing_basis") or "").upper()
             meter_type = "DEFECTIVE" if basis == "MD" else "NORMAL"
-            reading = entry.get("suggested_reading") or 1355
+            reading = entry.get("suggested_reading")
+            prev = int(entry.get("previous_reading") or 0)
+            base_avg = int(entry.get("base_avg_units") or entry.get("smart_average_kwh") or 50)
 
-            if entry.get("is_clamped_min"):
-                print(f"  [*] Min Floor Clamped: Base {entry.get('base_avg_units')} kWh -> Tuned {entry.get('tuned_avg_units')} kWh (Reading: {reading})")
-            elif entry.get("is_clamped_max"):
+            if self.apply_tuning:
+                indiv_min = entry.get("min_avg_units")
+                effective_floor = int(indiv_min) if (indiv_min is not None and int(indiv_min) > 0) else (self.min_floor or 125)
+
+                if entry.get("is_clamped_min"):
+                    tuned_avg = entry.get("tuned_avg_units") or effective_floor
+                    print(f"  [*] Min Floor Clamped: Base {base_avg} kWh -> Tuned {tuned_avg} kWh (Reading: {reading})")
+                elif base_avg < effective_floor:
+                    tuned_avg = effective_floor
+                    sug = entry.get("suggested_reading") or entry.get("working_reading")
+                    if sug and int(sug) > base_avg:
+                        reading = int(sug) - base_avg + tuned_avg
+                    else:
+                        reading = (prev if prev > 0 else 0) + tuned_avg
+                    print(f"  [*] Min Floor Clamped: Base {base_avg} kWh -> Tuned {tuned_avg} kWh (Reading: {reading})")
+                elif reading is None:
+                    reading = prev + base_avg
+            else:
+                if reading is None:
+                    reading = entry.get("working_reading") or (prev + base_avg if prev > 0 else 1355)
+
+            if entry.get("is_clamped_max"):
                 print(f"  [*] Max Ceiling Clamped: Base {entry.get('base_avg_units')} kWh -> Tuned {entry.get('tuned_avg_units')} kWh (Reading: {reading})")
 
             print(f"\n--- [{idx}/{len(consumers)}] CA={ca} ({name}) ---")

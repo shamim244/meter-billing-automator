@@ -16,8 +16,17 @@ class Screen1Search:
         print(f"\n[*] [Screen 1] Fast Searching Consumer CA: {ca_number}...")
         try:
             self.d.screen_on()
+            self.d.shell("svc power stayon true")
         except Exception:
             pass
+
+        # Dismiss any lingering alerts from previous screen
+        old_alert = self.d(resourceId="android:id/button1")
+        if old_alert.exists(timeout=0.1):
+            try:
+                old_alert.click()
+            except Exception:
+                pass
 
         # 1. Start clean ConsumerSearchActivity directly
         self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
@@ -25,6 +34,10 @@ class Screen1Search:
         # 2. Enter CA number into bh_AccNo1search
         input_field = self.d(resourceId="in.phoenix.bpdcl:id/bh_AccNo1search")
         if input_field.wait(timeout=2.0):
+            try:
+                input_field.clear_text()
+            except Exception:
+                pass
             input_field.set_text(str(ca_number))
         else:
             self.d.shell(f"input tap 727 543; input text {ca_number}")

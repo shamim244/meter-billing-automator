@@ -68,6 +68,13 @@ class Screen4Submit:
                 back_btn.click()
             else:
                 self.d.click(718, 2305)
+            time.sleep(0.3)
+
+        # Always ensure device returns to ConsumerSearchActivity for next batch item
+        try:
+            self.d.app_start("in.phoenix.bpdcl", ".ConsumerSearchActivity", stop=False)
+        except Exception:
+            self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
 
         print("\n>>> [SUCCESS] Consumer Billed & Submitted in NBPDCL! <<<\n")
         return True
