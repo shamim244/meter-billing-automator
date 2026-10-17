@@ -159,19 +159,35 @@ class Screen2Form:
         pre_cap = self.d(resourceId="in.coral.bpdcl:id/capture_readings_btn")
 
         while time.time() - t_wait < timeout:
-            if shutter.exists(timeout=0.03) or pre_cap.exists(timeout=0.03):
-                print(f"  [+] MR Bharat reached in {round(time.time() - t_start, 2)}s!")
-                return True
+            try:
+                if shutter.exists(timeout=0.05) or pre_cap.exists(timeout=0.05):
+                    print(f"  [+] MR Bharat reached in {round(time.time() - t_start, 2)}s!")
+                    return True
+            except Exception:
+                pass
+
+            # Fast shell fallback check in case u2 jsonrpc dropped momentarily during camera init
+            try:
+                out = self.d.shell("dumpsys window | grep mCurrentFocus")
+                focus_text = out[0] if isinstance(out, tuple) else getattr(out, 'output', str(out))
+                if "MeterReadingActivity" in focus_text or "ScanMeterActivity" in focus_text:
+                    print(f"  [+] MR Bharat reached in {round(time.time() - t_start, 2)}s!")
+                    return True
+            except Exception:
+                pass
 
             # If 2.5s elapsed without launch, retry tapping KwhCaptureButton
             if time.time() - t_wait > 2.5:
-                if cam_btn.exists(timeout=0.2):
-                    cam_btn.click()
-                else:
+                try:
+                    if cam_btn.exists(timeout=0.1):
+                        cam_btn.click()
+                    else:
+                        self.d.shell("input tap 440 2284")
+                except Exception:
                     self.d.shell("input tap 440 2284")
                 time.sleep(0.5)
 
-            time.sleep(0.08)
+            time.sleep(0.15)
 
         print("  [!] Timed out waiting for MR Bharat to launch.")
         return False

@@ -97,12 +97,21 @@ class Screen3Camera:
         except Exception:
             pass
 
-        if not input_found and not in_review and not input_field.wait(timeout=2.0):
-            print("  [!] Reading input field not found after camera retries!")
-            return False
+        if not input_found and not in_review:
+            try:
+                if not input_field.wait(timeout=2.0):
+                    print("  [!] Reading input field not found after camera retries!")
+                    return False
+            except Exception:
+                pass
 
         # 3. Enter Reading and Save if input field is present
-        if input_field.exists(timeout=0.2):
+        try:
+            has_input = input_field.exists(timeout=0.2)
+        except Exception:
+            has_input = False
+
+        if has_input:
             print(f"  [3] Injecting KWH Reading: {reading_kwh}...")
             try:
                 input_field.click()
@@ -121,7 +130,10 @@ class Screen3Camera:
             self.d.shell(f"input keyevent 123 {dpad_del}")
 
             # Inject the correct reading
-            input_field.set_text(str(reading_kwh))
+            try:
+                input_field.set_text(str(reading_kwh))
+            except Exception:
+                self.d.shell(f"input text {reading_kwh}")
             
             # Verify text was entered; fallback to shell input if needed
             try:
@@ -138,16 +150,19 @@ class Screen3Camera:
             except Exception:
                 pass
 
-            save_btn = self.d(text="Save")
-            if save_btn.wait(timeout=1.5):
-                print("  [*] Tapping Save button...")
-                save_btn.click()
-            else:
-                btn1 = self.d(resourceId="android:id/button1")
-                if btn1.exists(timeout=0.5):
-                    btn1.click()
+            try:
+                save_btn = self.d(text="Save")
+                if save_btn.wait(timeout=1.5):
+                    print("  [*] Tapping Save button...")
+                    save_btn.click()
                 else:
-                    self.d.shell("input tap 870 1389")
+                    btn1 = self.d(resourceId="android:id/button1")
+                    if btn1.exists(timeout=0.5):
+                        btn1.click()
+                    else:
+                        self.d.shell("input tap 870 1389")
+            except Exception:
+                self.d.shell("input tap 870 1389")
 
         # 4. Multi-dialog Race Condition Watcher
         print("  [4] Watching for popups, revalidation alerts, and BillingManual return...")
@@ -157,61 +172,84 @@ class Screen3Camera:
         billing_cam = self.d(resourceId="in.phoenix.bpdcl:id/KwhCaptureButton")
 
         while time.time() - t_loop < timeout:
-            # Instant element check for BillingManual return (zero dumpsys overhead)
-            if billing_ps.exists(timeout=0.03) or billing_cam.exists(timeout=0.03):
-                print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
-                return True
+            # Check for BillingManual return (u2 element check with shell fallback)
+            try:
+                if billing_ps.exists(timeout=0.03) or billing_cam.exists(timeout=0.03):
+                    print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
+                    return True
+            except Exception:
+                pass
+
+            try:
+                out = self.d.shell("dumpsys window | grep mCurrentFocus")
+                focus_text = out[0] if isinstance(out, tuple) else getattr(out, 'output', str(out))
+                if "BillingManual" in focus_text:
+                    print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
+                    return True
+            except Exception:
+                pass
 
             # Check for generic dialog confirmation button (button1: OK / Submit / Yes / Confirm)
-            sec_submit = self.d(resourceId="android:id/button1")
-            sec_title = self.d(resourceId="in.coral.bpdcl:id/dialog_title_text")
-            if sec_submit.exists(timeout=0.05) or sec_title.exists(timeout=0.05):
-                btn_text = (sec_submit.get_text() or "Submit").strip()
-                print(f"  [+] Confirmation popup detected ('{btn_text}')! Tapping button...")
-                sec_submit.click_exists(timeout=0.3)
-                t_loop = time.time()
-                time.sleep(0.2)
-                continue
+            try:
+                sec_submit = self.d(resourceId="android:id/button1")
+                sec_title = self.d(resourceId="in.coral.bpdcl:id/dialog_title_text")
+                if sec_submit.exists(timeout=0.05) or sec_title.exists(timeout=0.05):
+                    btn_text = (sec_submit.get_text() or "Submit").strip()
+                    print(f"  [+] Confirmation popup detected ('{btn_text}')! Tapping button...")
+                    sec_submit.click_exists(timeout=0.3)
+                    t_loop = time.time()
+                    time.sleep(0.2)
+                    continue
+            except Exception:
+                pass
 
             # Check for Revalidation / Doubt warning
             if not revalidation_handled:
-                reval_btn = self.d(resourceId="in.coral.bpdcl:id/revalidate_btn")
-                if reval_btn.exists(timeout=0.05):
-                    print("  [*] Revalidation required! Executing dynamic override sequence...")
-                    reval_btn.click()
-                    rep_btn = self.d(resourceId="in.coral.bpdcl:id/btn_report")
-                    if rep_btn.wait(timeout=2.0):
-                        rep_btn.click()
-                    correct_opt = self.d(text="Readings are correct")
-                    if correct_opt.wait(timeout=2.0):
-                        print("  [*] Selected 'Readings are correct' remark.")
-                        correct_opt.click()
-                    # Final submit inside MR Bharat
-                    submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
-                    if submit_btn.wait(timeout=2.0):
-                        print("  [*] Tapping final Submit in MR Bharat...")
-                        submit_btn.click()
-                    else:
-                        print("  [*] Fallback tap for MR Bharat submit (792, 2231)...")
-                        self.d.click(792, 2231)
-                    revalidation_handled = True
-                    t_loop = time.time()
-                    time.sleep(0.5)
-                    continue
+                try:
+                    reval_btn = self.d(resourceId="in.coral.bpdcl:id/revalidate_btn")
+                    if reval_btn.exists(timeout=0.05):
+                        print("  [*] Revalidation required! Executing dynamic override sequence...")
+                        reval_btn.click()
+                        rep_btn = self.d(resourceId="in.coral.bpdcl:id/btn_report")
+                        if rep_btn.wait(timeout=2.0):
+                            rep_btn.click()
+                        correct_opt = self.d(text="Readings are correct")
+                        if correct_opt.wait(timeout=2.0):
+                            print("  [*] Selected 'Readings are correct' remark.")
+                            correct_opt.click()
+                        # Final submit inside MR Bharat
+                        submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
+                        if submit_btn.wait(timeout=2.0):
+                            print("  [*] Tapping final Submit in MR Bharat...")
+                            submit_btn.click()
+                        else:
+                            print("  [*] Fallback tap for MR Bharat submit (792, 2231)...")
+                            self.d.click(792, 2231)
+                        revalidation_handled = True
+                        t_loop = time.time()
+                        time.sleep(0.5)
+                        continue
+                except Exception:
+                    pass
 
             # Direct Submit or Save & Validate Later button in MR Bharat review screen
-            submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
-            save_later_btn = self.d(resourceId="in.coral.bpdcl:id/save_readings_main_btn")
-            if submit_btn.click_exists(timeout=0.1):
-                print("  [*] Tapping direct Submit in MR Bharat...")
-                t_loop = time.time()
-                time.sleep(0.4)
-                continue
-            elif save_later_btn.click_exists(timeout=0.1):
-                print("  [*] Tapping 'Save Readings and Validate Later' in MR Bharat...")
-                t_loop = time.time()
-                time.sleep(0.4)
-                continue
+            try:
+                submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
+                save_later_btn = self.d(resourceId="in.coral.bpdcl:id/save_readings_main_btn")
+                if submit_btn.click_exists(timeout=0.1):
+                    print("  [*] Tapping direct Submit in MR Bharat...")
+                    t_loop = time.time()
+                    time.sleep(0.4)
+                    continue
+                elif save_later_btn.click_exists(timeout=0.1):
+                    print("  [*] Tapping 'Save Readings and Validate Later' in MR Bharat...")
+                    t_loop = time.time()
+                    time.sleep(0.4)
+                    continue
+            except Exception:
+                pass
+
+            time.sleep(0.1)
 
             time.sleep(0.1)
 
