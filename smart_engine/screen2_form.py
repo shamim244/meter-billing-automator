@@ -104,9 +104,15 @@ class Screen2Form:
         cam_btn.wait(timeout=1.5)
 
         cam_b = self._get_bounds(cam_btn)
+        # If button is near or below bottom fold (> 2100), swipe up to bring into clear view
+        if not cam_b or cam_b.get("bottom", 0) > 2100 or cam_b.get("top", 0) > 2050:
+            self.d.swipe(540, 1800, 540, 1400, 0.2)
+            time.sleep(0.3)
+            cam_b = self._get_bounds(self.d(resourceId="in.phoenix.bpdcl:id/KwhCaptureButton"))
+
         if cam_b and "top" in cam_b and "bottom" in cam_b:
             cam_cx = int((cam_b.get("left", 357) + cam_b.get("right", 524)) // 2)
-            cam_cy = int((cam_b.get("top", 1926) + cam_b.get("bottom", 2048)) // 2)
+            cam_cy = int((cam_b.get("top", 1862) + cam_b.get("bottom", 1984)) // 2)
         else:
             # Mathematical fallback relative to meterloctypeiv cy + 189
             loc_b = self._get_bounds(loc_btn)
