@@ -22,49 +22,45 @@ class Screen2Form:
         # 1. Select Present Status
         print(f"  [1] Selecting Present Status: {target_status}...")
         ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
-        if ps_btn.wait(timeout=2.5):
-            ps_btn.click()
-            opt = self.d(text=target_status)
-            if opt.wait(timeout=1.5):
-                opt.click()
-            else:
-                self.d(textContains=target_status).click_exists(timeout=0.5)
-        else:
+        if not (ps_btn.exists(timeout=0.05) or ps_btn.wait(timeout=2.5)):
             print("  [!] PresentStatus1 not found!")
             return False
 
-        # 2. Select Site Observation (OK)
-        print("  [2] Selecting Site Observation: OK...")
+        ps_btn.click()
+        if not self.d(text=target_status).click_exists(timeout=0.3):
+            self.d(textContains=target_status).click_exists(timeout=0.2)
+
+        # 2. Select Site Observation (OK) with smart prefill bypass
         obs_btn = self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1")
-        if obs_btn.wait(timeout=1.5):
-            obs_btn.click()
-            # Fast DPAD sequence via direct socket shell (delay 5ms)
-            dpad = " ".join(["20"] * 30)
-            self.d.shell(f"input keyevent --delay 5 {dpad} 19 66")
+        obs_text = obs_btn.get_text() if obs_btn.exists(timeout=0.05) else ""
+        if obs_text == "OK":
+            print("  [2] Site Observation already prefilled with 'OK' – Fast-path bypass!")
         else:
-            print("  [!] atMOBS1 not found!")
-            return False
-
-        # 3. Select Meter Location Type (Inside)
-        print("  [3] Selecting Meter Location: Inside...")
-        loc_btn = self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv")
-        if loc_btn.wait(timeout=1.5):
-            loc_btn.click()
-            opt_loc = self.d(text="Inside")
-            if opt_loc.wait(timeout=1.5):
-                opt_loc.click()
+            print("  [2] Selecting Site Observation: OK...")
+            if obs_btn.click_exists(timeout=0.2):
+                # Fast DPAD sequence via direct socket shell (delay 2ms)
+                dpad = " ".join(["20"] * 30)
+                self.d.shell(f"input keyevent --delay 2 {dpad} 19 66")
             else:
-                self.d(textContains="Inside").click_exists(timeout=0.5)
-        else:
-            print("  [!] meterloctypeiv not found!")
-            return False
+                self.d.shell("input tap 691 1942")
 
-        # 4. Launch Camera via KwhCaptureButton
+        # 3. Select Meter Location Type (Inside) with smart prefill bypass
+        loc_btn = self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv")
+        loc_text = loc_btn.get_text() if loc_btn.exists(timeout=0.05) else ""
+        if loc_text == "Inside":
+            print("  [3] Meter Location already prefilled with 'Inside' – Fast-path bypass!")
+        else:
+            print("  [3] Selecting Meter Location: Inside...")
+            if loc_btn.click_exists(timeout=0.2):
+                if not self.d(text="Inside").click_exists(timeout=0.3):
+                    self.d(textContains="Inside").click_exists(timeout=0.2)
+            else:
+                self.d.shell("input tap 691 1790")
+
+        # 4. Launch Camera via KwhCaptureButton (Zero sleep)
         print("  [4] Tapping KwhCaptureButton to launch MR Bharat...")
         cam_btn = self.d(resourceId="in.phoenix.bpdcl:id/KwhCaptureButton")
-        if cam_btn.wait(timeout=1.5):
-            cam_btn.click()
-        else:
+        if not cam_btn.click_exists(timeout=0.2):
             self.d.click(440, 1239)
 
         # 5. Event-based wait for MR Bharat screen

@@ -10,29 +10,40 @@ class TestScreen2Form(unittest.TestCase):
         ps_btn = MagicMock()
         ps_btn.exists = MagicMock(return_value=True)
         ps_btn.wait = MagicMock(return_value=True)
+        ps_btn.click_exists = MagicMock(return_value=True)
 
         obs_btn = MagicMock()
         obs_btn.exists = MagicMock(return_value=True)
         obs_btn.wait = MagicMock(return_value=True)
+        obs_btn.click_exists = MagicMock(return_value=True)
+        obs_btn.get_text = MagicMock(return_value="")
 
         loc_btn = MagicMock()
         loc_btn.exists = MagicMock(return_value=True)
         loc_btn.wait = MagicMock(return_value=True)
+        loc_btn.click_exists = MagicMock(return_value=True)
+        loc_btn.get_text = MagicMock(return_value="")
 
         cam_btn = MagicMock()
         cam_btn.exists = MagicMock(return_value=True)
         cam_btn.wait = MagicMock(return_value=True)
+        cam_btn.click_exists = MagicMock(return_value=True)
 
         # Dropdown options
         opt_normal = MagicMock()
+        opt_normal.click_exists = MagicMock(return_value=True)
         opt_inside = MagicMock()
+        opt_inside.click_exists = MagicMock(return_value=True)
 
         # MR Bharat target element waiter
         mr_shutter = MagicMock()
+        mr_shutter.exists = MagicMock(return_value=True)
         mr_shutter.wait = MagicMock(return_value=True)
 
-        def selector_side_effect(resourceId=None, text=None):
+        def selector_side_effect(resourceId=None, text=None, textContains=None):
             elem = MagicMock()
+            elem.exists = MagicMock(return_value=False)
+            elem.click_exists = MagicMock(return_value=True)
             if resourceId == "in.phoenix.bpdcl:id/PresentStatus1":
                 return ps_btn
             elif resourceId == "in.phoenix.bpdcl:id/atMOBS1":
@@ -43,9 +54,9 @@ class TestScreen2Form(unittest.TestCase):
                 return cam_btn
             elif resourceId == "in.coral.bpdcl:id/captureImg":
                 return mr_shutter
-            elif text == "NORMAL":
+            elif text == "NORMAL" or textContains == "NORMAL":
                 return opt_normal
-            elif text == "Inside":
+            elif text == "Inside" or textContains == "Inside":
                 return opt_inside
             return elem
 
@@ -59,6 +70,60 @@ class TestScreen2Form(unittest.TestCase):
         # Verify direct shell DPAD execution occurred on mock_d.shell
         mock_d.shell.assert_called()
         self.assertTrue(any("input keyevent" in str(c) for c in mock_d.shell.call_args_list))
+
+    def test_fill_form_prefilled_fastpath_skips_dpad(self):
+        mock_d = MagicMock()
+        mock_d.shell = MagicMock(return_value=("", 0))
+
+        ps_btn = MagicMock()
+        ps_btn.exists = MagicMock(return_value=True)
+        ps_btn.wait = MagicMock(return_value=True)
+
+        obs_btn = MagicMock()
+        obs_btn.exists = MagicMock(return_value=True)
+        obs_btn.get_text = MagicMock(return_value="OK")  # Already OK
+
+        loc_btn = MagicMock()
+        loc_btn.exists = MagicMock(return_value=True)
+        loc_btn.get_text = MagicMock(return_value="Inside")  # Already Inside
+
+        cam_btn = MagicMock()
+        cam_btn.click_exists = MagicMock(return_value=True)
+
+        opt_normal = MagicMock()
+        opt_normal.click_exists = MagicMock(return_value=True)
+
+        mr_shutter = MagicMock()
+        mr_shutter.exists = MagicMock(return_value=True)
+
+        def selector_side_effect(resourceId=None, text=None, textContains=None):
+            elem = MagicMock()
+            elem.exists = MagicMock(return_value=False)
+            elem.click_exists = MagicMock(return_value=True)
+            if resourceId == "in.phoenix.bpdcl:id/PresentStatus1":
+                return ps_btn
+            elif resourceId == "in.phoenix.bpdcl:id/atMOBS1":
+                return obs_btn
+            elif resourceId == "in.phoenix.bpdcl:id/meterloctypeiv":
+                return loc_btn
+            elif resourceId == "in.phoenix.bpdcl:id/KwhCaptureButton":
+                return cam_btn
+            elif resourceId == "in.coral.bpdcl:id/captureImg":
+                return mr_shutter
+            elif text == "NORMAL" or textContains == "NORMAL":
+                return opt_normal
+            return elem
+
+        mock_d.side_effect = selector_side_effect
+        mock_d.app_current.return_value = {"activity": "MeterReadingActivity", "package": "in.coral.bpdcl"}
+
+        s2 = Screen2Form(device=mock_d)
+        res = s2.fill_form_and_launch_camera(meter_type="NORMAL")
+
+        self.assertTrue(res)
+        # Verify DPAD was skipped because Site Observation was already OK
+        dpad_calls = [c for c in mock_d.shell.call_args_list if "input keyevent" in str(c)]
+        self.assertEqual(len(dpad_calls), 0)
 
 if __name__ == "__main__":
     unittest.main()
