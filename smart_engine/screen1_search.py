@@ -56,7 +56,8 @@ class Screen1Search:
 
         while time.time() - t_start < timeout:
             if ps_btn.exists(timeout=0.05):
-                print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
+                time.sleep(0.3)
+                print(f"  [+] BillingManual reached and settled in {round(time.time() - t_start, 2)}s!")
                 return True
 
             if alert.exists(timeout=0.05):

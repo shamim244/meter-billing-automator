@@ -60,10 +60,11 @@ class Screen2Form:
             else:
                 self.d.click(691, 1790)
 
-        # 4. Launch Camera via KwhCaptureButton (Zero sleep)
+        # 4. Launch Camera via KwhCaptureButton (with safe 250ms settlement pause)
         print("  [4] Tapping KwhCaptureButton to launch MR Bharat...")
+        time.sleep(0.25)
         cam_btn = self.d(resourceId="in.phoenix.bpdcl:id/KwhCaptureButton")
-        if not cam_btn.click_exists(timeout=0.2):
+        if not cam_btn.click_exists(timeout=0.5):
             self.d.click(440, 1239)
 
         # 5. Direct element-based event wait for MR Bharat (zero dumpsys overhead)
