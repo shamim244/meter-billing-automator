@@ -29,4 +29,5 @@ logs/
 # IDE and agent directories
 .agent/
 .claude/
+.superpowers/
 chat/.agent/
