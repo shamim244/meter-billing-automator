@@ -95,6 +95,17 @@ class SmartRunner:
         print("[!] Timed out waiting for device unlock.")
         return False
 
+    def _reset_to_search(self):
+        try:
+            if hasattr(self, 'd') and self.d:
+                btn1 = self.d(resourceId="android:id/button1")
+                if btn1.exists(timeout=0.1):
+                    btn1.click()
+                self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
+                time.sleep(0.3)
+        except Exception:
+            pass
+
     def process_consumer(self, ca_number, reading_kwh=1355, meter_type="NORMAL"):
         if not self.ensure_device_unlocked():
             return False, "doubt"
@@ -112,21 +123,25 @@ class SmartRunner:
         # Screen 1: Fast Search CA and wait for BillingManual
         if not self.s1.search_consumer(ca_number):
             print("  [!] Screen 1 Search failed.")
+            self._reset_to_search()
             return False, "pending"
 
         # Screen 2: Fill Form and Launch Camera
         if not self.s2.fill_form_and_launch_camera(meter_type=meter_type):
             print("  [!] Screen 2 Form failed.")
+            self._reset_to_search()
             return False, "doubt"
 
         # Screen 3: Camera Capture, Reading Entry & Doubt Resolver
         if not self.s3.handle_camera_and_review(reading_kwh=reading_kwh):
             print("  [!] Screen 3 Camera / Review failed.")
+            self._reset_to_search()
             return False, "doubt"
 
         # Screen 4: Final Submit or Stage-Only Reset
         if not self.s4.handle_final_submit(do_submit=self.final_submit):
             print("  [!] Screen 4 Submit / Reset failed.")
+            self._reset_to_search()
             return False, "doubt"
 
         total_time = round(time.time() - t0, 2)
