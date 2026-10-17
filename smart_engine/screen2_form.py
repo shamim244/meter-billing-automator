@@ -138,20 +138,24 @@ class Screen2Form:
             self.d.swipe(540, 1800, 540, 1200, 0.2)
             time.sleep(0.3)
 
+        cam_cx, cam_cy = 440, 2284
         if cam_btn.exists(timeout=0.5):
             try:
                 info = cam_btn.info if hasattr(cam_btn, 'info') and isinstance(cam_btn.info, dict) else {}
                 bounds = info.get("bounds", {}) if isinstance(info, dict) else {}
-                bottom = bounds.get("bottom", 0) if isinstance(bounds, dict) else 0
-                if isinstance(bottom, (int, float)) and bottom > 2330:
+                bottom = bounds.get("bottom", 2345) if isinstance(bounds.get("bottom"), (int, float)) else 2345
+                if bottom > 2330:
                     self.d.swipe(540, 1800, 540, 1500, 0.2)
                     time.sleep(0.2)
+                left = bounds.get("left", 357) if isinstance(bounds.get("left"), (int, float)) else 357
+                right = bounds.get("right", 524) if isinstance(bounds.get("right"), (int, float)) else 524
+                top = bounds.get("top", 2223) if isinstance(bounds.get("top"), (int, float)) else 2223
+                cam_cx = int((left + right) // 2)
+                cam_cy = int((top + bottom) // 2)
             except Exception:
-                pass
-            cam_btn.click()
-        else:
-            # Fallback to coordinate tap
-            self.d.shell("input tap 440 2284")
+                cam_cx, cam_cy = 440, 2284
+
+        self.d.shell(f"input tap {cam_cx} {cam_cy}")
 
         # 8. Wait for MR Bharat Camera to launch
         t_wait = time.time()
