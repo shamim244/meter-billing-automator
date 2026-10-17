@@ -29,12 +29,13 @@ except ImportError:
     u2 = None
 
 class SmartRunner:
-    def __init__(self, mru="8", cycle="OCT-2026", device_serial="192.168.9.40:5555", dry_run=False, final_submit=False):
+    def __init__(self, mru="8", cycle="OCT-2026", device_serial="192.168.9.40:5555", dry_run=False, final_submit=False, apply_tuning=False):
         self.mru = str(mru)
         self.cycle = str(cycle)
         self.device_serial = device_serial
         self.dry_run = dry_run
         self.final_submit = final_submit
+        self.apply_tuning = apply_tuning
 
         self.d = None
         if not dry_run:
@@ -92,7 +93,7 @@ class SmartRunner:
             print("[!] NBPDCLClient not initialized.")
             return {"total": 0, "processed": 0, "failed": 0}
 
-        queue = self.client.get_automation_queue(mru_id=self.mru, cycle=self.cycle, limit=limit)
+        queue = self.client.get_automation_queue(mru_id=self.mru, cycle=self.cycle, limit=limit, apply_tuning=self.apply_tuning)
         if not queue.get("success", False):
             print(f"[!] API call failed: {queue.get('message', 'unknown')}")
             return {"total": 0, "processed": 0, "failed": 0}
@@ -153,6 +154,7 @@ def main():
     parser.add_argument("--device", default="192.168.9.40:5555", help="Device serial / IP")
     parser.add_argument("--dry-run", action="store_true", help="Preview queue execution without hardware interaction")
     parser.add_argument("--final-submit", action="store_true", help="Execute final bill generation in NBPDCL (Default: Stage-Only)")
+    parser.add_argument("--apply-tuning", action="store_true", help="Apply batch smart average tuning to suggested reading (Default: False - pure baseline)")
     args = parser.parse_args()
 
     runner = SmartRunner(
@@ -160,7 +162,8 @@ def main():
         cycle=args.cycle,
         device_serial=args.device,
         dry_run=args.dry_run,
-        final_submit=args.final_submit
+        final_submit=args.final_submit,
+        apply_tuning=args.apply_tuning
     )
     runner.run_batch(limit=args.limit)
 

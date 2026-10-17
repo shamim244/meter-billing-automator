@@ -154,14 +154,41 @@ class NBPDCLClient:
             "reviews": reviews,
         })
 
-    def get_automation_queue(self, mru_id=None, cycle=None, limit=50):
+    def submit_batch_sync(self, reviews, billing_month=10, billing_year=2026):
+        """Bulk sync alias supporting direct review lists with default or custom period."""
+        return self.batch_sync(billing_month=billing_month, billing_year=billing_year, reviews=reviews)
+
+    def get_automation_queue(self, mru_id=None, cycle=None, limit=50, apply_tuning=False):
         """High-speed FIFO queue for ADB bots - pre-calculated suggested readings."""
         params = {"limit": limit}
         if mru_id:
             params["mru_id"] = mru_id
         if cycle:
             params["cycle"] = cycle
+        if apply_tuning:
+            params["apply_tuning"] = "true"
         return self._get("/automation/queue", params=params)
+
+    def update_consumer_average_tuning(self, ca, custom_avg_units=None, min_avg_units=None,
+                                       max_avg_units=None, is_avg_excluded=None,
+                                       avg_exclude_reason=None, month=None, year=None):
+        """Configure individual consumer average guardrails, override ceiling, or exclusion."""
+        payload = {}
+        if custom_avg_units is not None:
+            payload["custom_avg_units"] = custom_avg_units
+        if min_avg_units is not None:
+            payload["min_avg_units"] = min_avg_units
+        if max_avg_units is not None:
+            payload["max_avg_units"] = max_avg_units
+        if is_avg_excluded is not None:
+            payload["is_avg_excluded"] = bool(is_avg_excluded)
+        if avg_exclude_reason is not None:
+            payload["avg_exclude_reason"] = avg_exclude_reason
+        if month is not None:
+            payload["month"] = month
+        if year is not None:
+            payload["year"] = year
+        return self._post(f"/consumers/{ca}/average-tuning", payload)
 
 
 # ---------------------------------------------------------------------------
