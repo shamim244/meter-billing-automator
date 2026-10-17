@@ -158,7 +158,8 @@ class NBPDCLClient:
         """Bulk sync alias supporting direct review lists with default or custom period."""
         return self.batch_sync(billing_month=billing_month, billing_year=billing_year, reviews=reviews)
 
-    def get_automation_queue(self, mru_id=None, cycle=None, limit=50, apply_tuning=False):
+    def get_automation_queue(self, mru_id=None, cycle=None, limit=50, apply_tuning=False,
+                             min_units_floor=None, max_units_ceiling=None, adjustment_percent=None, ca=None):
         """High-speed FIFO queue for ADB bots - pre-calculated suggested readings."""
         params = {"limit": limit}
         if mru_id:
@@ -167,6 +168,14 @@ class NBPDCLClient:
             params["cycle"] = cycle
         if apply_tuning:
             params["apply_tuning"] = "true"
+        if min_units_floor is not None:
+            params["min_units_floor"] = min_units_floor
+        if max_units_ceiling is not None:
+            params["max_units_ceiling"] = max_units_ceiling
+        if adjustment_percent is not None:
+            params["adjustment_percent"] = adjustment_percent
+        if ca:
+            params["ca"] = str(ca).strip()
         return self._get("/automation/queue", params=params)
 
     def update_consumer_average_tuning(self, ca, custom_avg_units=None, min_avg_units=None,

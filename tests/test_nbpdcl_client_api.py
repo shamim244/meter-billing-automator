@@ -26,12 +26,25 @@ class TestNBPDCLClientApi(unittest.TestCase):
         }
         mock_get.return_value = mock_resp
 
-        res = self.client.get_automation_queue(mru_id="8", cycle="OCT-2026", limit=10, apply_tuning=True)
+        res = self.client.get_automation_queue(
+            mru_id="8",
+            cycle="OCT-2026",
+            limit=10,
+            apply_tuning=True,
+            min_units_floor=125,
+            max_units_ceiling=200,
+            adjustment_percent=10.0,
+            ca="10230062566"
+        )
         self.assertTrue(res["success"])
         mock_get.assert_called_once()
         args, kwargs = mock_get.call_args
         self.assertIn("apply_tuning", kwargs["params"])
         self.assertEqual(kwargs["params"]["apply_tuning"], "true")
+        self.assertEqual(kwargs["params"]["min_units_floor"], 125)
+        self.assertEqual(kwargs["params"]["max_units_ceiling"], 200)
+        self.assertEqual(kwargs["params"]["adjustment_percent"], 10.0)
+        self.assertEqual(kwargs["params"]["ca"], "10230062566")
 
     @patch("chat.nbpdcl_client.requests.post")
     def test_update_consumer_average_tuning(self, mock_post):

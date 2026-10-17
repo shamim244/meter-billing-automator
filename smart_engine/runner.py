@@ -29,13 +29,19 @@ except ImportError:
     u2 = None
 
 class SmartRunner:
-    def __init__(self, mru="8", cycle="OCT-2026", device_serial="192.168.9.40:5555", dry_run=False, final_submit=False, apply_tuning=False):
+    def __init__(self, mru="8", cycle="OCT-2026", device_serial="192.168.9.40:5555",
+                 dry_run=False, final_submit=False, apply_tuning=False,
+                 min_floor=None, max_ceiling=None, adjust_percent=None, ca=None):
         self.mru = str(mru)
         self.cycle = str(cycle)
         self.device_serial = device_serial
         self.dry_run = dry_run
         self.final_submit = final_submit
         self.apply_tuning = apply_tuning
+        self.min_floor = int(min_floor) if min_floor is not None else (int(os.environ.get("NBPDCL_MIN_FLOOR")) if os.environ.get("NBPDCL_MIN_FLOOR") else None)
+        self.max_ceiling = int(max_ceiling) if max_ceiling is not None else None
+        self.adjust_percent = float(adjust_percent) if adjust_percent is not None else None
+        self.target_ca = str(ca).strip() if ca else None
 
         self.d = None
         if not dry_run:
@@ -88,17 +94,50 @@ class SmartRunner:
         return True, status
 
     def run_batch(self, limit=1):
-        print(f"[+] Fetching automation queue (MRU: {self.mru}, Cycle: {self.cycle}, Limit: {limit})…")
+        target_str = f" | Target CA: {self.target_ca}" if self.target_ca else ""
+        print(f"[+] Fetching automation queue (MRU: {self.mru}, Cycle: {self.cycle}, Limit: {limit}{target_str})…")
         if not self.client:
             print("[!] NBPDCLClient not initialized.")
             return {"total": 0, "processed": 0, "failed": 0}
 
-        queue = self.client.get_automation_queue(mru_id=self.mru, cycle=self.cycle, limit=limit, apply_tuning=self.apply_tuning)
+        if self.apply_tuning:
+            print(f"[+] Tuning Active: Floor={self.min_floor or 'Auto/Consumer'}, Ceiling={self.max_ceiling or 'None'}, Adj={self.adjust_percent or 0}%")
+
+        queue = self.client.get_automation_queue(
+            mru_id=self.mru,
+            cycle=self.cycle,
+            limit=limit,
+            apply_tuning=self.apply_tuning,
+            min_units_floor=self.min_floor,
+            max_units_ceiling=self.max_ceiling,
+            adjustment_percent=self.adjust_percent,
+            ca=self.target_ca
+        )
         if not queue.get("success", False):
             print(f"[!] API call failed: {queue.get('message', 'unknown')}")
             return {"total": 0, "processed": 0, "failed": 0}
 
         consumers = queue.get("consumers", [])
+        if self.target_ca:
+            matched = [c for c in consumers if str(c.get("ca_number")).strip() == self.target_ca]
+            if matched:
+                consumers = matched
+            else:
+                retry_q = self.client.get_automation_queue(
+                    mru_id=self.mru,
+                    cycle=self.cycle,
+                    limit=100,
+                    apply_tuning=self.apply_tuning,
+                    min_units_floor=self.min_floor,
+                    max_units_ceiling=self.max_ceiling,
+                    adjustment_percent=self.adjust_percent,
+                    ca=self.target_ca
+                )
+                retry_consumers = retry_q.get("consumers", [])
+                matched = [c for c in retry_consumers if str(c.get("ca_number")).strip() == self.target_ca]
+                if matched:
+                    consumers = matched
+
         if not consumers:
             print("[+] Queue empty – nothing to do.")
             return {"total": 0, "processed": 0, "failed": 0}
@@ -115,6 +154,11 @@ class SmartRunner:
             basis = str(entry.get("billing_basis") or "").upper()
             meter_type = "DEFECTIVE" if basis == "MD" else "NORMAL"
             reading = entry.get("suggested_reading") or 1355
+
+            if entry.get("is_clamped_min"):
+                print(f"  [*] Min Floor Clamped: Base {entry.get('base_avg_units')} kWh -> Tuned {entry.get('tuned_avg_units')} kWh (Reading: {reading})")
+            elif entry.get("is_clamped_max"):
+                print(f"  [*] Max Ceiling Clamped: Base {entry.get('base_avg_units')} kWh -> Tuned {entry.get('tuned_avg_units')} kWh (Reading: {reading})")
 
             print(f"\n--- [{idx}/{len(consumers)}] CA={ca} ({name}) ---")
             ok, status = self.process_consumer(ca, reading_kwh=reading, meter_type=meter_type)
@@ -151,10 +195,14 @@ def main():
     parser.add_argument("--mru", default="8", help="Target MRU code")
     parser.add_argument("--cycle", default="OCT-2026", help="Billing cycle")
     parser.add_argument("--limit", type=int, default=1, help="Max consumers to process")
+    parser.add_argument("--ca", default=None, help="Target a specific consumer account number")
     parser.add_argument("--device", default="192.168.9.40:5555", help="Device serial / IP")
     parser.add_argument("--dry-run", action="store_true", help="Preview queue execution without hardware interaction")
     parser.add_argument("--final-submit", action="store_true", help="Execute final bill generation in NBPDCL (Default: Stage-Only)")
     parser.add_argument("--apply-tuning", action="store_true", help="Apply batch smart average tuning to suggested reading (Default: False - pure baseline)")
+    parser.add_argument("--min-floor", type=int, default=None, help="Minimum average consumption floor (kWh) for batch tuning")
+    parser.add_argument("--max-ceiling", type=int, default=None, help="Maximum average consumption ceiling (kWh)")
+    parser.add_argument("--adjust-percent", type=float, default=None, help="Batch tuning adjustment percent")
     args = parser.parse_args()
 
     runner = SmartRunner(
@@ -163,7 +211,11 @@ def main():
         device_serial=args.device,
         dry_run=args.dry_run,
         final_submit=args.final_submit,
-        apply_tuning=args.apply_tuning
+        apply_tuning=args.apply_tuning,
+        min_floor=args.min_floor,
+        max_ceiling=args.max_ceiling,
+        adjust_percent=args.adjust_percent,
+        ca=args.ca
     )
     runner.run_batch(limit=args.limit)
 
