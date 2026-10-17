@@ -28,54 +28,48 @@ class Screen1Search:
             except Exception:
                 pass
 
-        # 1. Start clean ConsumerSearchActivity directly
+        # 1. Clean return to ConsumerSearchActivity
         self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
 
         # 2. Enter CA number into bh_AccNo1search
         input_field = self.d(resourceId="in.phoenix.bpdcl:id/bh_AccNo1search")
-        if input_field.wait(timeout=2.0):
+        if input_field.wait(timeout=1.5):
             try:
                 input_field.clear_text()
             except Exception:
                 pass
             input_field.set_text(str(ca_number))
         else:
-            self.d.shell(f"input tap 727 543; input text {ca_number}")
+            dpad_del = " ".join(["67"] * 25)
+            self.d.shell(f"input tap 727 543; input keyevent 123 {dpad_del}; input text {ca_number}")
 
-        # 3. Immediately click Search button (zero-sleep, no redundant XML dumps)
+        # 3. Immediately click Search button
         search_btn = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
         if not search_btn.click_exists(timeout=0.1):
-            # Fast fallback: dismiss keyboard (if active) and tap coordinates (450, 726)
             self.d.shell("input keyevent 4; input tap 450 726")
 
-        # 4. Dynamic Event Loop: Wait for BillingManual OR Alert popup
+        # 3. Dynamic Event Loop: Wait for BillingManual OR Alert popup
+        # Uses direct element inspection (30ms) instead of expensive app_current dumpsys (1500ms)
         t_start = time.time()
+        ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
+        alert = self.d(resourceId="android:id/alertTitle")
+
         while time.time() - t_start < timeout:
-            # Check for error / warning alerts first
-            alert = self.d(resourceId="android:id/alertTitle")
+            if ps_btn.exists(timeout=0.05):
+                print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
+                return True
+
             if alert.exists(timeout=0.05):
                 title = alert.get_text() if alert.exists() else "Alert"
                 msg_elem = self.d(resourceId="android:id/message")
                 msg = msg_elem.get_text() if msg_elem.exists() else ""
                 print(f"  [!] Alert detected: '{title}' - '{msg}'")
                 btn1 = self.d(resourceId="android:id/button1")
-                if btn1.exists(timeout=0.5):
+                if btn1.exists(timeout=0.3):
                     btn1.click()
                 return False
 
-            # Check if BillingManual is reached (via activity name or PresentStatus1)
-            act = ""
-            try:
-                act = self.d.app_current().get("activity", "")
-            except Exception:
-                pass
-
-            ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
-            if "BillingManual" in act or ps_btn.exists(timeout=0.05):
-                print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
-                return True
-
-            time.sleep(0.08)
+            time.sleep(0.05)
 
         print("  [!] Failed to reach BillingManual within timeout.")
         return False

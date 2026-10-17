@@ -19,16 +19,20 @@ class Screen2Form:
         is_defective = (str(meter_type).upper() == "DEFECTIVE")
         target_status = "METER DEFECTIVE" if is_defective else "NORMAL"
 
-        # 1. Select Present Status
-        print(f"  [1] Selecting Present Status: {target_status}...")
+        # 1. Select Present Status with smart prefill bypass
         ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
-        if not (ps_btn.exists(timeout=0.05) or ps_btn.wait(timeout=2.5)):
+        if not (ps_btn.exists(timeout=0.05) or ps_btn.wait(timeout=2.0)):
             print("  [!] PresentStatus1 not found!")
             return False
 
-        ps_btn.click()
-        if not self.d(text=target_status).click_exists(timeout=0.3):
-            self.d(textContains=target_status).click_exists(timeout=0.2)
+        ps_text = ps_btn.get_text() if ps_btn.exists(timeout=0.05) else ""
+        if target_status in ps_text:
+            print(f"  [1] Present Status already prefilled with '{target_status}' – Fast-path bypass!")
+        else:
+            print(f"  [1] Selecting Present Status: {target_status}...")
+            ps_btn.click()
+            if not self.d(text=target_status).click_exists(timeout=0.3):
+                self.d(textContains=target_status).click_exists(timeout=0.2)
 
         # 2. Select Site Observation (OK) with smart prefill bypass
         obs_btn = self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1")
@@ -38,11 +42,10 @@ class Screen2Form:
         else:
             print("  [2] Selecting Site Observation: OK...")
             if obs_btn.click_exists(timeout=0.2):
-                # Fast DPAD sequence via direct socket shell (delay 2ms)
-                dpad = " ".join(["20"] * 30)
+                dpad = " ".join(["20"] * 10)
                 self.d.shell(f"input keyevent --delay 2 {dpad} 19 66")
             else:
-                self.d.shell("input tap 691 1942")
+                self.d.click(691, 1942)
 
         # 3. Select Meter Location Type (Inside) with smart prefill bypass
         loc_btn = self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv")
@@ -55,7 +58,7 @@ class Screen2Form:
                 if not self.d(text="Inside").click_exists(timeout=0.3):
                     self.d(textContains="Inside").click_exists(timeout=0.2)
             else:
-                self.d.shell("input tap 691 1790")
+                self.d.click(691, 1790)
 
         # 4. Launch Camera via KwhCaptureButton (Zero sleep)
         print("  [4] Tapping KwhCaptureButton to launch MR Bharat...")
@@ -63,26 +66,21 @@ class Screen2Form:
         if not cam_btn.click_exists(timeout=0.2):
             self.d.click(440, 1239)
 
-        # 5. Event-based wait for MR Bharat screen
+        # 5. Direct element-based event wait for MR Bharat (zero dumpsys overhead)
         t_wait = time.time()
+        shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
+        pre_cap = self.d(resourceId="in.coral.bpdcl:id/capture_readings_btn")
+
         while time.time() - t_wait < timeout:
-            # Check if camera shutter or pre-capture button appears
-            if (self.d(resourceId="in.coral.bpdcl:id/captureImg").exists(timeout=0.05) or
-                self.d(resourceId="in.coral.bpdcl:id/capture_readings_btn").exists(timeout=0.05)):
+            if shutter.exists(timeout=0.03) or pre_cap.exists(timeout=0.03):
                 print(f"  [+] MR Bharat reached in {round(time.time() - t_start, 2)}s!")
                 return True
 
-            act = ""
-            try:
-                act = self.d.app_current().get("activity", "")
-            except Exception:
-                pass
+            # If 1.5s elapsed without launch, tap KwhCaptureButton again
+            if time.time() - t_wait > 1.5 and not cam_btn.click_exists(timeout=0.1):
+                self.d.click(440, 1239)
 
-            if "coral" in act or "MeterReadingActivity" in act or "ScanMeterActivity" in act:
-                print(f"  [+] MR Bharat activity reached ({act}) in {round(time.time() - t_start, 2)}s!")
-                return True
-
-            time.sleep(0.08)
+            time.sleep(0.05)
 
         print("  [!] Timed out waiting for MR Bharat to launch.")
         return False

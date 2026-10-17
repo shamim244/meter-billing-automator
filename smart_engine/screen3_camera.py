@@ -116,31 +116,24 @@ class Screen3Camera:
         print("  [4] Watching for popups, revalidation alerts, and BillingManual return...")
         t_loop = time.time()
         revalidation_handled = False
+        billing_ps = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
+        billing_cam = self.d(resourceId="in.phoenix.bpdcl:id/KwhCaptureButton")
 
         while time.time() - t_loop < timeout:
-            # Check if returned to BillingManual
-            act = ""
-            pkg = ""
-            try:
-                cur = self.d.app_current()
-                act = cur.get("activity", "")
-                pkg = cur.get("package", "")
-            except Exception:
-                pass
-
-            if "BillingManual" in act or ("in.phoenix.bpdcl" in pkg and "coral" not in pkg):
+            # Instant element check for BillingManual return (zero dumpsys overhead)
+            if billing_ps.exists(timeout=0.03) or billing_cam.exists(timeout=0.03):
                 print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
                 return True
 
             # Check for generic dialog confirmation button (button1: OK / Submit / Yes / Confirm)
             sec_submit = self.d(resourceId="android:id/button1")
             sec_title = self.d(resourceId="in.coral.bpdcl:id/dialog_title_text")
-            if sec_submit.exists(timeout=0.08) or sec_title.exists(timeout=0.08):
+            if sec_submit.exists(timeout=0.05) or sec_title.exists(timeout=0.05):
                 btn_text = (sec_submit.get_text() or "Submit").strip()
                 print(f"  [+] Confirmation popup detected ('{btn_text}')! Tapping button...")
-                sec_submit.click_exists(timeout=0.5)
+                sec_submit.click_exists(timeout=0.3)
                 t_loop = time.time()
-                time.sleep(0.3)
+                time.sleep(0.2)
                 continue
 
             # Check for Revalidation / Doubt warning

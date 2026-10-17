@@ -260,6 +260,21 @@ class SmartRunner:
                 )
                 reviews.append(rev)
 
+                # Immediate real-time sync to SaaS API so dashboard updates instantly
+                if self.client and ok:
+                    try:
+                        self.client.submit_review(
+                            ca_number=ca,
+                            billing_month=10,
+                            billing_year=2026,
+                            status=status,
+                            working_reading=reading,
+                            remark="Billed via Smart Engine V2"
+                        )
+                        print(f"  [✓] SaaS API updated immediately: CA {ca} -> {status} (Reading: {reading})")
+                    except Exception as e:
+                        print(f"  [!] Real-time sync note: {e}")
+
         if reviews and self.client:
             print("\n[+] Syncing batch ledger with SaaS API...")
             res = self.client.submit_batch_sync(reviews)
