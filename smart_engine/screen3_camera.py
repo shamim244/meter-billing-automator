@@ -1,7 +1,7 @@
 """
 screen3_camera.py – Screen 3: High-Speed MR Bharat Camera & Review Controller (in.coral.bpdcl).
 Captures photo, enters reading, resolves secondary popup, and overrides doubt alerts.
-Uses non-blocking element waiters and an event-driven race condition watcher to minimize latency.
+Features a stabilized camera retry loop, alert recovery, and race condition watcher.
 """
 import os
 import sys
@@ -13,7 +13,7 @@ class Screen3Camera:
         self.d = device or u2.connect(serial)
         self.serial = serial
 
-    def handle_camera_and_review(self, reading_kwh=1355, timeout=25.0):
+    def handle_camera_and_review(self, reading_kwh=1355, timeout=30.0):
         t0 = time.time()
         print(f"\n[*] [Screen 3] MR Bharat: Fast Camera & Reading Entry ({reading_kwh} KWH)...")
 
@@ -21,18 +21,24 @@ class Screen3Camera:
         pre_capture = self.d(resourceId="in.coral.bpdcl:id/capture_readings_btn")
         if pre_capture.exists(timeout=0.3):
             print("  [1] Tapping initial CAPTURE button...")
-            pre_capture.click()
+            try:
+                pre_capture.click()
+            except Exception:
+                pass
 
-        # 2. Trigger Camera Shutter & Wait for Reading Input Dialog
+        # 2. Trigger Camera Shutter & Wait for Reading Input Dialog (up to 5 attempts)
         input_field = self.d(resourceId="in.coral.bpdcl:id/input")
         input_found = False
 
-        for attempt in range(1, 4):
-            print(f"  [2] Camera Capture Attempt {attempt}/3...")
+        for attempt in range(1, 6):
+            print(f"  [2] Camera Capture Attempt {attempt}/5...")
             try:
                 shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
+                shutter_text = self.d(text="CAPTURE")
                 if shutter.wait(timeout=1.5):
                     shutter.click()
+                elif shutter_text.exists(timeout=0.3):
+                    shutter_text.click()
                 else:
                     self.d.shell("input tap 794 2256")
             except Exception:
@@ -47,18 +53,33 @@ class Screen3Camera:
                         break
 
                     alert = self.d(resourceId="in.coral.bpdcl:id/alertTitle")
-                    if alert.exists(timeout=0.05):
-                        msg = (self.d(resourceId="android:id/message").get_text() or "") if self.d(resourceId="android:id/message").exists() else ""
+                    alert_std = self.d(resourceId="android:id/alertTitle")
+                    if alert.exists(timeout=0.05) or alert_std.exists(timeout=0.05):
+                        msg_node = self.d(resourceId="android:id/message")
+                        msg = (msg_node.get_text() or "") if msg_node.exists(timeout=0.05) else ""
                         print(f"  [!] Camera alert detected: '{msg}'")
+
                         if "previously saved" in msg.lower():
                             print("  [+] Accepting previously saved meter reading (tapping Yes)...")
-                            self.d.shell("input tap 870 1389; input keyevent 66")
+                            yes_btn = self.d(resourceId="android:id/button1")
+                            if yes_btn.exists(timeout=0.2):
+                                yes_btn.click()
+                            else:
+                                self.d.shell("input tap 870 1389; input keyevent 66")
                             input_found = True
                             break
                         else:
-                            print("  [*] Dismissing alert and retrying shutter...")
-                            self.d.shell("input keyevent 66")
-                            time.sleep(0.3)
+                            print("  [*] Dismissing alert and allowing camera sensor to stabilize (1.2s)...")
+                            ok_btn = self.d(resourceId="android:id/button1")
+                            if ok_btn.exists(timeout=0.2):
+                                ok_btn.click()
+                            elif self.d(text="OK").exists(timeout=0.2):
+                                self.d(text="OK").click()
+                            else:
+                                self.d.shell("input keyevent 66")
+
+                            # Sensor stabilization delay: Allow camera focus & ML model to re-arm
+                            time.sleep(1.2)
                             break
                 except Exception:
                     time.sleep(0.1)
@@ -122,7 +143,11 @@ class Screen3Camera:
                 print("  [*] Tapping Save button...")
                 save_btn.click()
             else:
-                self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
+                btn1 = self.d(resourceId="android:id/button1")
+                if btn1.exists(timeout=0.5):
+                    btn1.click()
+                else:
+                    self.d.shell("input tap 870 1389")
 
         # 4. Multi-dialog Race Condition Watcher
         print("  [4] Watching for popups, revalidation alerts, and BillingManual return...")
