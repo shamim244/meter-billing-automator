@@ -157,11 +157,17 @@ class Screen3Camera:
                     time.sleep(0.1)
                     continue
 
-            # Direct Submit button in MR Bharat review screen
+            # Direct Submit or Save & Validate Later button in MR Bharat review screen
             submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
+            save_later_btn = self.d(resourceId="in.coral.bpdcl:id/save_readings_main_btn")
             if submit_btn.exists(timeout=0.05):
                 print("  [*] Tapping direct Submit in MR Bharat...")
                 submit_btn.click()
+                time.sleep(0.2)
+                continue
+            elif save_later_btn.exists(timeout=0.05):
+                print("  [*] Tapping 'Save Readings and Validate Later' in MR Bharat...")
+                save_later_btn.click()
                 time.sleep(0.2)
                 continue
 
