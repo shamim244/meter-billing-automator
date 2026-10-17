@@ -42,72 +42,80 @@ class Screen3Camera:
                     input_found = True
                     break
 
-                # Check if 'Invalid Image' or 'Please capture clear' alert appeared
+                # Check if alert appeared
                 alert = self.d(resourceId="in.coral.bpdcl:id/alertTitle")
                 if alert.exists(timeout=0.05):
                     msg = self.d(resourceId="android:id/message").get_text() if self.d(resourceId="android:id/message").exists() else ""
-                    print(f"  [!] Camera alert detected: '{msg}'. Dismissing and retrying...")
-                    self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
-                    # Turn on flash on retry
-                    self.d(resourceId="in.coral.bpdcl:id/flash_switch").click_exists(timeout=0.3)
-                    break
+                    print(f"  [!] Camera alert detected: '{msg}'")
+                    if "previously saved" in msg.lower():
+                        print("  [+] Accepting previously saved meter reading (tapping Yes)...")
+                        self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
+                        input_found = True
+                        break
+                    else:
+                        print("  [*] Dismissing alert and retrying shutter...")
+                        self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
+                        self.d(resourceId="in.coral.bpdcl:id/flash_switch").click_exists(timeout=0.3)
+                        break
                 time.sleep(0.1)
 
             if input_found:
                 break
 
-        if not input_found and not input_field.wait(timeout=2.0):
+        # Check if already in MeterReadingActivity review screen or wait for input
+        in_review = "MeterReadingActivity" in (self.d.app_current().get("activity", "") or "")
+        if not input_found and not in_review and not input_field.wait(timeout=2.0):
             print("  [!] Reading input field not found after camera retries!")
             return False
 
-        # 3. Enter Reading and Save (Clear all existing text first)
-        print(f"  [3] Injecting KWH Reading: {reading_kwh}...")
-        try:
-            input_field.click()
-            time.sleep(0.15)
-        except Exception:
-            pass
+        # 3. Enter Reading and Save if input field is present
+        if input_field.exists(timeout=0.2):
+            print(f"  [3] Injecting KWH Reading: {reading_kwh}...")
+            try:
+                input_field.click()
+                time.sleep(0.15)
+            except Exception:
+                pass
 
-        # Select all and clear existing text / OCR residue
-        try:
-            input_field.clear_text()
-        except Exception:
-            pass
+            # Select all and clear existing text / OCR residue
+            try:
+                input_field.clear_text()
+            except Exception:
+                pass
 
-        # Send explicit backspaces to ensure field is 100% clean
-        dpad_del = " ".join(["67"] * 20)
-        self.d.shell(f"input keyevent 123 {dpad_del}")
+            # Send explicit backspaces to ensure field is 100% clean
+            dpad_del = " ".join(["67"] * 20)
+            self.d.shell(f"input keyevent 123 {dpad_del}")
 
-        # Inject the correct reading
-        input_field.set_text(str(reading_kwh))
-        
-        # Verify text was entered; fallback to shell input if needed
-        try:
-            curr_text = input_field.get_text()
-            if not curr_text or curr_text != str(reading_kwh):
-                self.d.shell(f"input text {reading_kwh}")
-        except Exception:
-            pass
+            # Inject the correct reading
+            input_field.set_text(str(reading_kwh))
+            
+            # Verify text was entered; fallback to shell input if needed
+            try:
+                curr_text = input_field.get_text()
+                if not curr_text or curr_text != str(reading_kwh):
+                    self.d.shell(f"input text {reading_kwh}")
+            except Exception:
+                pass
 
-        # Dismiss soft keyboard so Save button is not obscured
-        try:
-            self.d.press("back")
-            time.sleep(0.15)
-        except Exception:
-            pass
+            # Dismiss soft keyboard so Save button is not obscured
+            try:
+                self.d.press("back")
+                time.sleep(0.15)
+            except Exception:
+                pass
 
-        save_btn = self.d(text="Save")
-        if save_btn.wait(timeout=1.5):
-            print("  [*] Tapping Save button...")
-            save_btn.click()
-        else:
-            self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
+            save_btn = self.d(text="Save")
+            if save_btn.wait(timeout=1.5):
+                print("  [*] Tapping Save button...")
+                save_btn.click()
+            else:
+                self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
 
         # 4. Multi-dialog Race Condition Watcher
         print("  [4] Watching for popups, revalidation alerts, and BillingManual return...")
         t_loop = time.time()
         revalidation_handled = False
-        secondary_handled = False
 
         while time.time() - t_loop < timeout:
             # Check if returned to BillingManual
@@ -124,16 +132,14 @@ class Screen3Camera:
                 print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
                 return True
 
-            # Check for Secondary Confirmation Popup ("Electro Mechanical Meter")
-            if not secondary_handled:
-                sec_title = self.d(resourceId="in.coral.bpdcl:id/dialog_title_text")
-                sec_submit = self.d(text="Submit")
-                if sec_title.exists(timeout=0.05) or sec_submit.exists(timeout=0.05):
-                    print("  [+] Secondary confirmation popup detected! Tapping Submit...")
-                    sec_submit.click_exists(timeout=0.5)
-                    secondary_handled = True
-                    time.sleep(0.1)
-                    continue
+            # Check for Secondary Confirmation Popup ("Electro Mechanical Meter" or "All parameters captured")
+            sec_title = self.d(resourceId="in.coral.bpdcl:id/dialog_title_text")
+            sec_submit = self.d(resourceId="android:id/button1")
+            if sec_title.exists(timeout=0.05) or (sec_submit.exists(timeout=0.05) and "Submit" in (sec_submit.get_text() or "")):
+                print("  [+] Secondary confirmation popup detected! Tapping Submit...")
+                sec_submit.click_exists(timeout=0.5)
+                time.sleep(0.2)
+                continue
 
             # Check for Revalidation / Doubt warning
             if not revalidation_handled:
@@ -160,15 +166,13 @@ class Screen3Camera:
             # Direct Submit or Save & Validate Later button in MR Bharat review screen
             submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
             save_later_btn = self.d(resourceId="in.coral.bpdcl:id/save_readings_main_btn")
-            if submit_btn.exists(timeout=0.05):
+            if submit_btn.click_exists(timeout=0.1):
                 print("  [*] Tapping direct Submit in MR Bharat...")
-                submit_btn.click()
-                time.sleep(0.2)
+                time.sleep(0.3)
                 continue
-            elif save_later_btn.exists(timeout=0.05):
+            elif save_later_btn.click_exists(timeout=0.1):
                 print("  [*] Tapping 'Save Readings and Validate Later' in MR Bharat...")
-                save_later_btn.click()
-                time.sleep(0.2)
+                time.sleep(0.3)
                 continue
 
             time.sleep(0.08)
