@@ -24,25 +24,18 @@ class Screen1Search:
 
         # 2. Enter CA number into bh_AccNo1search
         input_field = self.d(resourceId="in.phoenix.bpdcl:id/bh_AccNo1search")
-        if input_field.wait(timeout=3.0):
-            input_field.click()
+        if input_field.wait(timeout=2.0):
             input_field.set_text(str(ca_number))
         else:
             self.d.shell(f"input tap 727 543; input text {ca_number}")
 
-        # 3. Dismiss soft keyboard if it covers the search button
+        # 3. Immediately click Search button (zero-sleep, no redundant XML dumps)
         search_btn = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
-        if not search_btn.exists(timeout=0.2):
-            self.d.press("back")
-            time.sleep(0.1)
+        if not search_btn.click_exists(timeout=0.1):
+            # Fast fallback: dismiss keyboard (if active) and tap coordinates (450, 726)
+            self.d.shell("input keyevent 4; input tap 450 726")
 
-        # 4. Click Search button
-        if search_btn.wait(timeout=1.5):
-            search_btn.click()
-        else:
-            self.d.shell("input tap 450 726")
-
-        # 5. Dynamic Event Loop: Wait for BillingManual OR Alert popup
+        # 4. Dynamic Event Loop: Wait for BillingManual OR Alert popup
         t_start = time.time()
         while time.time() - t_start < timeout:
             # Check for error / warning alerts first
@@ -66,12 +59,10 @@ class Screen1Search:
 
             ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
             if "BillingManual" in act or ps_btn.exists(timeout=0.05):
-                # Ensure form is rendered
-                ps_btn.wait(timeout=2.5)
                 print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
                 return True
 
-            time.sleep(0.1)
+            time.sleep(0.08)
 
         print("  [!] Failed to reach BillingManual within timeout.")
         return False

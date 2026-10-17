@@ -21,6 +21,7 @@ class TestScreen1Search(unittest.TestCase):
         search_btn = MagicMock()
         search_btn.exists = MagicMock(return_value=True)
         search_btn.wait = MagicMock(return_value=True)
+        search_btn.click_exists = MagicMock(return_value=True)
         # Mock element for PresentStatus1 (GPS/Form readiness)
         ps_btn = MagicMock()
         ps_btn.exists = MagicMock(return_value=True)
