@@ -34,7 +34,7 @@ class TestScreen1Search(unittest.TestCase):
             elem = MagicMock()
             if resourceId == "in.phoenix.bpdcl:id/bh_AccNo1search":
                 return acc_field
-            elif resourceId == "in.phoenix.bpdcl:id/cons_search":
+            elif resourceId == "in.phoenix.bpdcl:id/cons_search" or text == "Search":
                 return search_btn
             elif resourceId == "in.phoenix.bpdcl:id/PresentStatus1":
                 return ps_btn

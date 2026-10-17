@@ -70,9 +70,11 @@ class Screen1Search:
             pass
 
         # 3. Click Search button
-        search_btn = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
+        search_btn = self.d(text="Search")
         if not search_btn.click_exists(timeout=0.5):
-            self.d.shell("input tap 450 726")
+            search_btn2 = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
+            if not search_btn2.click_exists(timeout=0.2):
+                self.d.shell("input tap 450 726")
 
         # 4. Dynamic Event Loop: Wait for BillingManual OR Alert popup
         # Direct element inspection for speed and stability

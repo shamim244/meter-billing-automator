@@ -8,6 +8,11 @@ import sys
 import time
 import argparse
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
@@ -286,14 +291,14 @@ class SmartRunner:
                             working_reading=reading,
                             remark="Billed via Smart Engine V2"
                         )
-                        print(f"  [✓] SaaS API updated immediately: CA {ca} -> {status} (Reading: {reading})")
+                        print(f"  [+] SaaS API updated immediately: CA {ca} -> {status} (Reading: {reading})")
                     except Exception as e:
                         print(f"  [!] Real-time sync note: {e}")
 
         if reviews and self.client:
             print("\n[+] Syncing batch ledger with SaaS API...")
             res = self.client.submit_batch_sync(reviews)
-            print(f"[✓] SaaS Sync complete: {res.get('synced_count', 0)} synced.")
+            print(f"[+] SaaS Sync complete: {res.get('synced_count', 0)} synced.")
 
         batch_elapsed = round(time.time() - batch_t0, 2)
         avg_speed = round(batch_elapsed / max(processed, 1), 2)
