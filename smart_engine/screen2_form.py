@@ -1,7 +1,7 @@
 """
 screen2_form.py – Screen 2: High-Speed BillingManual Form Controller.
-Selects Meter Reading Status, Site Observation, and Location, then launches MR Bharat.
-Uses direct persistent ADB socket shell keyevents and zero static sleeps.
+Restores the 95% reliable selection system from automate_selections.py.
+Extracts exact element bounds and dispatches the proven chained ADB flow.
 """
 import os
 import sys
@@ -16,58 +16,84 @@ class Screen2Form:
     def fill_form_and_launch_camera(self, meter_type="NORMAL", timeout=8.0):
         t_start = time.time()
         print("\n[*] [Screen 2] Fast Filling BillingManual Form...")
-        is_defective = (str(meter_type).upper() == "DEFECTIVE")
+        is_defective = (str(meter_type).upper() in ["DEFECTIVE", "MD", "MB"])
         target_status = "METER DEFECTIVE" if is_defective else "NORMAL"
 
-        # 1. Select Present Status with smart prefill bypass
+        # 1. Locate UI elements on BillingManual
         ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
-        if not (ps_btn.exists(timeout=0.05) or ps_btn.wait(timeout=2.0)):
+        obs_btn = self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1")
+        loc_btn = self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv")
+
+        if not (ps_btn.exists(timeout=0.1) or ps_btn.wait(timeout=2.0)):
             print("  [!] PresentStatus1 not found!")
             return False
 
-        ps_text = (ps_btn.get_text() or "") if ps_btn.exists(timeout=0.05) else ""
-        if target_status in ps_text:
-            print(f"  [1] Present Status already prefilled with '{target_status}' – Fast-path bypass!")
-        else:
-            print(f"  [1] Selecting Present Status: {target_status}...")
-            ps_btn.click()
-            if not self.d(text=target_status).click_exists(timeout=0.3):
-                self.d(textContains=target_status).click_exists(timeout=0.2)
+        # 2. Extract exact bounds or use proven fallback coordinates
+        try:
+            ps_info = ps_btn.info.get("bounds", {}) if ps_btn.exists(timeout=0.1) else {}
+            ps_arrow_x = ps_info.get("right", 1026) - 50
+            ps_arrow_y = (ps_info.get("top", 1766) + ps_info.get("bottom", 1866)) // 2
+            ps_opt_x = (ps_info.get("left", 408) + ps_info.get("right", 1026)) // 2
+            ps_opt_y = ps_info.get("bottom", 1866) + 50
+        except Exception:
+            ps_arrow_x, ps_arrow_y = 976, 1816
+            ps_opt_x, ps_opt_y = 691, 1890
 
-        # 2. Select Site Observation (OK) with smart prefill bypass
-        obs_btn = self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1")
+        try:
+            obs_info = obs_btn.info.get("bounds", {}) if obs_btn.exists(timeout=0.1) else {}
+            obs_cx = (obs_info.get("left", 408) + obs_info.get("right", 1026)) // 2
+            obs_cy = (obs_info.get("top", 1892) + obs_info.get("bottom", 1992)) // 2
+        except Exception:
+            obs_cx, obs_cy = 691, 1942
+
+        try:
+            loc_info = loc_btn.info.get("bounds", {}) if loc_btn.exists(timeout=0.1) else {}
+            loc_arrow_x = loc_info.get("right", 1026) - 50
+            loc_arrow_y = (loc_info.get("top", 2018) + loc_info.get("bottom", 2118)) // 2
+            loc_opt_x = (loc_info.get("left", 408) + loc_info.get("right", 1026)) // 2
+            loc_opt_y = 1790 if loc_info.get("bottom", 2118) > 2070 else loc_info.get("bottom", 2118) + 40
+        except Exception:
+            loc_arrow_x, loc_arrow_y = 976, 2068
+            loc_opt_x, loc_opt_y = 691, 1790
+
+        kwh_x, kwh_y = 408, 2257
+
+        # 3. Check prefilled cache (OK + Inside)
         obs_text = (obs_btn.get_text() or "") if obs_btn.exists(timeout=0.05) else ""
-        if obs_text == "OK":
-            print("  [2] Site Observation already prefilled with 'OK' – Fast-path bypass!")
-        else:
-            print("  [2] Selecting Site Observation: OK...")
-            if obs_btn.click_exists(timeout=0.2):
-                dpad = " ".join(["20"] * 10)
-                self.d.shell(f"input keyevent --delay 2 {dpad} 19 66")
-            else:
-                self.d.click(691, 1942)
-
-        # 3. Select Meter Location Type (Inside) with smart prefill bypass
-        loc_btn = self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv")
         loc_text = (loc_btn.get_text() or "") if loc_btn.exists(timeout=0.05) else ""
-        if loc_text == "Inside":
-            print("  [3] Meter Location already prefilled with 'Inside' – Fast-path bypass!")
+        is_prefilled = (obs_text == "OK" and loc_text == "Inside")
+
+        # 4. Build the proven chained flow from automate_selections.py
+        if is_defective:
+            print("  [*] Defective Meter Mode: Selecting METER DEFECTIVE, DEFECTIVE, and Inside...")
+            dpad_bottom = " ".join(["20"] * 10)
+            flow = (
+                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps_opt_x} 1950; sleep 0.45; "
+                f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 15 {dpad_bottom} 66; sleep 0.45; "
+                f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input tap {loc_opt_x} 1790; sleep 0.45; "
+                f"input tap {kwh_x} {kwh_y}"
+            )
+        elif is_prefilled:
+            print("  [+] PRE-FILLED CACHE DETECTED! Site Observation (OK) & Location (Inside) already set.")
+            print("  [*] Fast-Path: Selecting ONLY NORMAL -> Camera...")
+            flow = (
+                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps_opt_x} {ps_opt_y}; sleep 0.4; "
+                f"input tap {kwh_x} {kwh_y}"
+            )
         else:
-            print("  [3] Selecting Meter Location: Inside...")
-            if loc_btn.click_exists(timeout=0.2):
-                if not self.d(text="Inside").click_exists(timeout=0.3):
-                    self.d(textContains="Inside").click_exists(timeout=0.2)
-            else:
-                self.d.click(691, 1790)
+            print("  [*] Fresh Consumer: Selecting NORMAL, OK (30 DPAD), and Inside...")
+            dpad_cmds = " ".join(["20"] * 30)
+            flow = (
+                f"input tap {ps_arrow_x} {ps_arrow_y}; sleep 0.35; input tap {ps_opt_x} {ps_opt_y}; sleep 0.45; "
+                f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 10 {dpad_cmds} 19 66; sleep 0.45; "
+                f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input tap {loc_opt_x} {loc_opt_y}; sleep 0.45; "
+                f"input tap {kwh_x} {kwh_y}"
+            )
 
-        # 4. Launch Camera via KwhCaptureButton (with safe 250ms settlement pause)
-        print("  [4] Tapping KwhCaptureButton to launch MR Bharat...")
-        time.sleep(0.25)
-        cam_btn = self.d(resourceId="in.phoenix.bpdcl:id/KwhCaptureButton")
-        if not cam_btn.click_exists(timeout=0.5):
-            self.d.click(440, 1239)
+        # 5. Dispatch the single chained ADB shell flow
+        self.d.shell(flow)
 
-        # 5. Direct element-based event wait for MR Bharat (zero dumpsys overhead)
+        # 6. Wait for MR Bharat Camera to launch
         t_wait = time.time()
         shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
         pre_cap = self.d(resourceId="in.coral.bpdcl:id/capture_readings_btn")
@@ -77,11 +103,12 @@ class Screen2Form:
                 print(f"  [+] MR Bharat reached in {round(time.time() - t_start, 2)}s!")
                 return True
 
-            # If 1.5s elapsed without launch, tap KwhCaptureButton again
-            if time.time() - t_wait > 1.5 and not cam_btn.click_exists(timeout=0.1):
-                self.d.click(440, 1239)
+            # If 2.5s elapsed without launch, tap KwhCaptureButton fallback
+            if time.time() - t_wait > 2.5:
+                self.d.shell(f"input tap {kwh_x} {kwh_y}")
+                time.sleep(0.5)
 
-            time.sleep(0.05)
+            time.sleep(0.08)
 
         print("  [!] Timed out waiting for MR Bharat to launch.")
         return False

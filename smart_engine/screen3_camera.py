@@ -29,41 +29,53 @@ class Screen3Camera:
 
         for attempt in range(1, 4):
             print(f"  [2] Camera Capture Attempt {attempt}/3...")
-            shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
-            if shutter.wait(timeout=2.0):
-                shutter.click()
-            else:
-                self.d.click(794, 2256)
+            try:
+                shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
+                if shutter.wait(timeout=1.5):
+                    shutter.click()
+                else:
+                    self.d.shell("input tap 794 2256")
+            except Exception:
+                self.d.shell("input tap 794 2256")
 
             # Wait up to 3.5s for input dialog or alert
             t_cap = time.time()
             while time.time() - t_cap < 3.5:
-                if input_field.exists(timeout=0.1):
-                    input_found = True
-                    break
-
-                # Check if alert appeared
-                alert = self.d(resourceId="in.coral.bpdcl:id/alertTitle")
-                if alert.exists(timeout=0.05):
-                    msg = (self.d(resourceId="android:id/message").get_text() or "") if self.d(resourceId="android:id/message").exists() else ""
-                    print(f"  [!] Camera alert detected: '{msg}'")
-                    if "previously saved" in msg.lower():
-                        print("  [+] Accepting previously saved meter reading (tapping Yes)...")
-                        self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
+                try:
+                    if input_field.exists(timeout=0.1):
                         input_found = True
                         break
-                    else:
-                        print("  [*] Dismissing alert and retrying shutter...")
-                        self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
-                        self.d(resourceId="in.coral.bpdcl:id/flash_switch").click_exists(timeout=0.3)
-                        break
-                time.sleep(0.1)
+
+                    alert = self.d(resourceId="in.coral.bpdcl:id/alertTitle")
+                    if alert.exists(timeout=0.05):
+                        msg = (self.d(resourceId="android:id/message").get_text() or "") if self.d(resourceId="android:id/message").exists() else ""
+                        print(f"  [!] Camera alert detected: '{msg}'")
+                        if "previously saved" in msg.lower():
+                            print("  [+] Accepting previously saved meter reading (tapping Yes)...")
+                            self.d.shell("input tap 870 1389; input keyevent 66")
+                            input_found = True
+                            break
+                        else:
+                            print("  [*] Dismissing alert and retrying shutter...")
+                            self.d.shell("input keyevent 66")
+                            time.sleep(0.3)
+                            break
+                except Exception:
+                    time.sleep(0.1)
+
+                time.sleep(0.08)
 
             if input_found:
                 break
 
         # Check if already in MeterReadingActivity review screen or wait for input
-        in_review = "MeterReadingActivity" in (self.d.app_current().get("activity", "") or "")
+        in_review = False
+        try:
+            cur = self.d.app_current()
+            in_review = "MeterReadingActivity" in (cur.get("activity", "") or "")
+        except Exception:
+            pass
+
         if not input_found and not in_review and not input_field.wait(timeout=2.0):
             print("  [!] Reading input field not found after camera retries!")
             return False
