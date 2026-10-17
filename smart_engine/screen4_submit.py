@@ -40,7 +40,7 @@ class Screen4Submit:
 
         # 3. Confirm YES on Alert dialog
         yes_btn = self.d(resourceId="android:id/button1")
-        if yes_btn.wait(timeout=2.0) and "YES" in yes_btn.get_text():
+        if yes_btn.wait(timeout=2.0) and "YES" in (yes_btn.get_text() or "").upper():
             print("  [+] Confirming YES on Bill Generation Dialog...")
             yes_btn.click()
         else:

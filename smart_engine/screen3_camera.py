@@ -45,7 +45,7 @@ class Screen3Camera:
                 # Check if alert appeared
                 alert = self.d(resourceId="in.coral.bpdcl:id/alertTitle")
                 if alert.exists(timeout=0.05):
-                    msg = self.d(resourceId="android:id/message").get_text() if self.d(resourceId="android:id/message").exists() else ""
+                    msg = (self.d(resourceId="android:id/message").get_text() or "") if self.d(resourceId="android:id/message").exists() else ""
                     print(f"  [!] Camera alert detected: '{msg}'")
                     if "previously saved" in msg.lower():
                         print("  [+] Accepting previously saved meter reading (tapping Yes)...")

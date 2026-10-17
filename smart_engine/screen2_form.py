@@ -25,7 +25,7 @@ class Screen2Form:
             print("  [!] PresentStatus1 not found!")
             return False
 
-        ps_text = ps_btn.get_text() if ps_btn.exists(timeout=0.05) else ""
+        ps_text = (ps_btn.get_text() or "") if ps_btn.exists(timeout=0.05) else ""
         if target_status in ps_text:
             print(f"  [1] Present Status already prefilled with '{target_status}' – Fast-path bypass!")
         else:
@@ -36,7 +36,7 @@ class Screen2Form:
 
         # 2. Select Site Observation (OK) with smart prefill bypass
         obs_btn = self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1")
-        obs_text = obs_btn.get_text() if obs_btn.exists(timeout=0.05) else ""
+        obs_text = (obs_btn.get_text() or "") if obs_btn.exists(timeout=0.05) else ""
         if obs_text == "OK":
             print("  [2] Site Observation already prefilled with 'OK' – Fast-path bypass!")
         else:
@@ -49,7 +49,7 @@ class Screen2Form:
 
         # 3. Select Meter Location Type (Inside) with smart prefill bypass
         loc_btn = self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv")
-        loc_text = loc_btn.get_text() if loc_btn.exists(timeout=0.05) else ""
+        loc_text = (loc_btn.get_text() or "") if loc_btn.exists(timeout=0.05) else ""
         if loc_text == "Inside":
             print("  [3] Meter Location already prefilled with 'Inside' – Fast-path bypass!")
         else:
