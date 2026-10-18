@@ -34,31 +34,38 @@ class Screen2Form:
             return False
 
         # 1. Step 1: Select PresentStatus1 (NORMAL / METER DEFECTIVE)
-        print(f"  [1] Selecting Present Status: {target_status}...")
-        ps_bounds = self._get_bounds(ps_btn)
-        ps_right = ps_bounds.get("right", 1026)
-        ps_top = ps_bounds.get("top", 1793)
-        ps_bottom = ps_bounds.get("bottom", 1893)
-        ps_arrow_x = int(ps_right) - 50
-        ps_arrow_y = int((ps_top + ps_bottom) // 2)
-        ps_opt_x = int((ps_bounds.get("left", 408) + ps_right) // 2)
-        ps_opt_y = int(ps_bottom) + 50
-
-        self.d.shell(f"input tap {ps_arrow_x} {ps_arrow_y}")
-        time.sleep(0.35)
-        opt_node = self.d(text=target_status)
-        if opt_node.wait(timeout=1.0):
-            opt_node.click()
+        current_ps = (ps_btn.get_text() or "").strip()
+        if current_ps == target_status:
+            print(f"  [1] Present Status already '{target_status}' - Fast-path bypass!")
         else:
-            self.d.shell(f"input tap {ps_opt_x} {ps_opt_y}")
-        time.sleep(0.4)
+            print(f"  [1] Selecting Present Status: {target_status}...")
+            ps_bounds = self._get_bounds(ps_btn)
+            ps_right = ps_bounds.get("right", 1026)
+            ps_top = ps_bounds.get("top", 1793)
+            ps_bottom = ps_bounds.get("bottom", 1893)
+            ps_arrow_x = int(ps_right) - 50
+            ps_arrow_y = int((ps_top + ps_bottom) // 2)
+            ps_opt_x = int((ps_bounds.get("left", 408) + ps_right) // 2)
+            ps_opt_y = int(ps_bottom) + 50
 
-        # 2. Step 2: Handle Site Observation (OK) with FRESH bounds
+            self.d.shell(f"input tap {ps_arrow_x} {ps_arrow_y}")
+            time.sleep(0.35)
+            opt_node = self.d(text=target_status)
+            if opt_node.wait(timeout=1.0):
+                opt_node.click()
+            else:
+                self.d.shell(f"input tap {ps_opt_x} {ps_opt_y}")
+            time.sleep(0.4)
+            verified_ps = (self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1").get_text() or "").strip()
+            if verified_ps == target_status:
+                print(f"      [+] Present Status verified as '{verified_ps}'")
+
+        # 2. Step 2: Handle Site Observation (OK) with CLOSED-LOOP VERIFICATION
         obs_btn = self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1")
-        obs_text = (obs_btn.get_text() or "") if obs_btn.exists(timeout=0.1) else ""
+        obs_text = (obs_btn.get_text() or "").strip() if obs_btn.exists(timeout=0.1) else ""
 
         if obs_text == "OK":
-            print("  [2] Site Observation already prefilled with 'OK' – Fast-path bypass!")
+            print("  [2] Site Observation already prefilled with 'OK' - Fast-path bypass!")
         elif is_defective:
             print("  [2] Defective Meter: Selecting DEFECTIVE observation...")
             obs_b = self._get_bounds(obs_btn)
@@ -69,21 +76,47 @@ class Screen2Form:
             time.sleep(0.4)
         else:
             print("  [2] Selecting Site Observation: OK...")
-            obs_b = self._get_bounds(obs_btn)
-            obs_cx = int((obs_b.get("left", 408) + obs_b.get("right", 1026)) // 2)
-            obs_cy = int((obs_b.get("top", 1919) + obs_b.get("bottom", 2019)) // 2)
-            dpad_cmds = " ".join(["20"] * 30)
-            # Proven ground-truth sequence: tap center to focus dropdown, 30 DPAD down, 1 DPAD up (to OK), ENTER
-            flow = f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 10 {dpad_cmds} 19 66"
-            self.d.shell(flow)
-            time.sleep(0.45)
+            selected_ok = False
+            for attempt in range(2):
+                obs_b = self._get_bounds(self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1"))
+                obs_cx = int((obs_b.get("left", 408) + obs_b.get("right", 1026)) // 2)
+                obs_cy = int((obs_b.get("top", 1919) + obs_b.get("bottom", 2019)) // 2)
+
+                # Method A: Try native scrollable list to "OK" if scroll container is present
+                scroll_container = self.d(scrollable=True)
+                if scroll_container.exists(timeout=0.2):
+                    try:
+                        scroll_container.scroll.to(text="OK")
+                        ok_node = self.d(text="OK")
+                        if ok_node.exists(timeout=0.3):
+                            ok_node.click()
+                            selected_ok = True
+                    except Exception:
+                        pass
+
+                # Method B: Proven ground-truth sequence: tap center to focus dropdown, 30 DPAD down, 1 DPAD up (to OK), ENTER
+                if not selected_ok:
+                    dpad_cmds = " ".join(["20"] * 30)
+                    flow = f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 10 {dpad_cmds} 19 66"
+                    self.d.shell(flow)
+
+                time.sleep(0.4)
+                # Verification Check
+                obs_val = (self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1").get_text() or "").strip()
+                if obs_val == "OK":
+                    print(f"      [+] Site Observation confirmed as '{obs_val}'")
+                    selected_ok = True
+                    break
+                else:
+                    print(f"      [!] Observation shows '{obs_val}', retrying selection (attempt {attempt+1}/2)...")
+                    time.sleep(0.2)
 
         # 3. Step 3: Handle Meter Location (Inside) with FRESH bounds
         loc_btn = self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv")
-        loc_text = (loc_btn.get_text() or "") if loc_btn.exists(timeout=0.1) else ""
+        loc_text = (loc_btn.get_text() or "").strip() if loc_btn.exists(timeout=0.1) else ""
 
         if loc_text == "Inside":
-            print("  [3] Meter Location already prefilled with 'Inside' – Fast-path bypass!")
+            print("  [3] Meter Location already prefilled with 'Inside' - Fast-path bypass!")
         else:
             print("  [3] Selecting Meter Location: Inside...")
             loc_b = self._get_bounds(loc_btn)
@@ -95,6 +128,21 @@ class Screen2Form:
             flow = f"input tap {loc_arrow_x} {loc_arrow_y}; sleep 0.35; input tap {loc_opt_x} {loc_opt_y}"
             self.d.shell(flow)
             time.sleep(0.4)
+            loc_val = (self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv").get_text() or "").strip()
+            if loc_val == "Inside":
+                print(f"      [+] Meter Location confirmed as '{loc_val}'")
+
+        # Pre-Flight Verification Gate before touching camera button
+        if not is_defective:
+            chk_obs = (self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1").get_text() or "").strip()
+            if chk_obs != "OK":
+                print(f"  [!] Pre-Flight Gate: Observation is '{chk_obs}' (not 'OK')! Re-applying selection...")
+                obs_b = self._get_bounds(self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1"))
+                obs_cx = int((obs_b.get("left", 408) + obs_b.get("right", 1026)) // 2)
+                obs_cy = int((obs_b.get("top", 1919) + obs_b.get("bottom", 2019)) // 2)
+                dpad_cmds = " ".join(["20"] * 30)
+                self.d.shell(f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 10 {dpad_cmds} 19 66")
+                time.sleep(0.4)
 
         # 4. Step 4: Locate & Tap KwhCaptureButton with FRESH bounds
         print("  [4] Tapping KwhCaptureButton to launch MR Bharat...")
@@ -122,7 +170,7 @@ class Screen2Form:
 
         self.d.shell(f"input tap {cam_cx} {cam_cy}")
 
-        # 5. Wait for MR Bharat Camera to launch
+        # 5. Wait for MR Bharat Camera to launch with Alert Recovery
         t_wait = time.time()
         shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
         pre_cap = self.d(resourceId="in.coral.bpdcl:id/capture_readings_btn")
@@ -142,6 +190,26 @@ class Screen2Form:
                 if "MeterReadingActivity" in focus_text or "ScanMeterActivity" in focus_text:
                     print(f"  [+] MR Bharat reached in {round(time.time() - t_start, 2)}s!")
                     return True
+            except Exception:
+                pass
+
+            # Check if an alert dialog popped up (e.g. "Please Select the Site Observations")
+            try:
+                alert_btn = self.d(resourceId="android:id/button1", text="OK")
+                if alert_btn.exists(timeout=0.05):
+                    alert_msg = (self.d(resourceId="android:id/message").get_text() or "").strip()
+                    print(f"  [!] Alert popped up on BillingManual: '{alert_msg}'! Dismissing and recovering...")
+                    alert_btn.click()
+                    time.sleep(0.3)
+                    # Re-apply OK observation
+                    obs_b = self._get_bounds(self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1"))
+                    obs_cx = int((obs_b.get("left", 408) + obs_b.get("right", 1026)) // 2)
+                    obs_cy = int((obs_b.get("top", 1919) + obs_b.get("bottom", 2019)) // 2)
+                    dpad_cmds = " ".join(["20"] * 30)
+                    self.d.shell(f"input tap {obs_cx} {obs_cy}; sleep 0.35; input keyevent --delay 10 {dpad_cmds} 19 66")
+                    time.sleep(0.4)
+                    # Re-tap camera button
+                    self.d.shell(f"input tap {cam_cx} {cam_cy}")
             except Exception:
                 pass
 

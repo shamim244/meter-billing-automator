@@ -40,7 +40,7 @@ class TestScreen2Form(unittest.TestCase):
         mr_shutter.exists = MagicMock(return_value=True)
         mr_shutter.wait = MagicMock(return_value=True)
 
-        def selector_side_effect(resourceId=None, text=None, textContains=None):
+        def selector_side_effect(resourceId=None, text=None, textContains=None, **kwargs):
             elem = MagicMock()
             elem.exists = MagicMock(return_value=False)
             elem.click_exists = MagicMock(return_value=True)
@@ -96,7 +96,7 @@ class TestScreen2Form(unittest.TestCase):
         mr_shutter = MagicMock()
         mr_shutter.exists = MagicMock(return_value=True)
 
-        def selector_side_effect(resourceId=None, text=None, textContains=None):
+        def selector_side_effect(resourceId=None, text=None, textContains=None, **kwargs):
             elem = MagicMock()
             elem.exists = MagicMock(return_value=False)
             elem.click_exists = MagicMock(return_value=True)
