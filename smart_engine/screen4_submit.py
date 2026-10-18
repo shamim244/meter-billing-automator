@@ -40,22 +40,25 @@ class Screen4Submit:
 
         # 3. Confirm YES on Alert dialog
         yes_btn = self.d(resourceId="android:id/button1")
-        if yes_btn.wait(timeout=2.0) and "YES" in (yes_btn.get_text() or "").upper():
+        if yes_btn.wait(timeout=2.0) and "YES" in yes_btn.get_text():
             print("  [+] Confirming YES on Bill Generation Dialog...")
             yes_btn.click()
         else:
             self.d.click(900, 1388)
 
-        # 4. Fast Wait for BillPrintOnline1 screen (zero dumpsys overhead)
+        # 4. Wait for BillPrintOnline1
         t_start = time.time()
         print_ready = False
-        back_btn = self.d(resourceId="in.phoenix.bpdcl:id/printback")
-
         while time.time() - t_start < timeout:
-            if back_btn.exists(timeout=0.05) or self.d(textContains="Print").exists(timeout=0.05):
+            act = ""
+            try:
+                act = self.d.app_current().get("activity", "")
+            except Exception:
+                pass
+            if "BillPrint" in act or "Print" in act:
                 print_ready = True
                 break
-            time.sleep(0.08)
+            time.sleep(0.1)
 
         if print_ready:
             print("  [+] Bill Print Screen loaded! Returning to Search...")

@@ -8,11 +8,6 @@ import sys
 import time
 import argparse
 
-try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-except Exception:
-    pass
-
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
@@ -100,17 +95,6 @@ class SmartRunner:
         print("[!] Timed out waiting for device unlock.")
         return False
 
-    def _reset_to_search(self):
-        try:
-            if hasattr(self, 'd') and self.d:
-                btn1 = self.d(resourceId="android:id/button1")
-                if btn1.exists(timeout=0.1):
-                    btn1.click()
-                self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
-                time.sleep(0.3)
-        except Exception:
-            pass
-
     def process_consumer(self, ca_number, reading_kwh=1355, meter_type="NORMAL"):
         if not self.ensure_device_unlocked():
             return False, "doubt"
@@ -128,25 +112,21 @@ class SmartRunner:
         # Screen 1: Fast Search CA and wait for BillingManual
         if not self.s1.search_consumer(ca_number):
             print("  [!] Screen 1 Search failed.")
-            self._reset_to_search()
             return False, "pending"
 
         # Screen 2: Fill Form and Launch Camera
         if not self.s2.fill_form_and_launch_camera(meter_type=meter_type):
             print("  [!] Screen 2 Form failed.")
-            self._reset_to_search()
             return False, "doubt"
 
         # Screen 3: Camera Capture, Reading Entry & Doubt Resolver
         if not self.s3.handle_camera_and_review(reading_kwh=reading_kwh):
             print("  [!] Screen 3 Camera / Review failed.")
-            self._reset_to_search()
             return False, "doubt"
 
         # Screen 4: Final Submit or Stage-Only Reset
         if not self.s4.handle_final_submit(do_submit=self.final_submit):
             print("  [!] Screen 4 Submit / Reset failed.")
-            self._reset_to_search()
             return False, "doubt"
 
         total_time = round(time.time() - t0, 2)
@@ -270,6 +250,21 @@ class SmartRunner:
             else:
                 failed += 1
 
+            # Immediate per-consumer SaaS sync
+            if not self.dry_run and self.client and self.final_submit and ok:
+                try:
+                    self.client.submit_review(
+                        ca_number=ca,
+                        billing_month=10,
+                        billing_year=2026,
+                        status=status,
+                        working_reading=reading,
+                        remark=f"Smart Engine V2 Auto-Submitted ({reading} KWH)"
+                    )
+                    print(f"  [✓] SaaS Ledger Updated: CA {ca} -> {status} (Reading: {reading})")
+                except Exception as e:
+                    print(f"  [!] Immediate SaaS sync warning for CA {ca}: {e}")
+
             if not self.dry_run and build_review and self.final_submit:
                 rev = build_review(
                     ca_number=ca,
@@ -280,25 +275,10 @@ class SmartRunner:
                 )
                 reviews.append(rev)
 
-                # Immediate real-time sync to SaaS API so dashboard updates instantly
-                if self.client and ok:
-                    try:
-                        self.client.submit_review(
-                            ca_number=ca,
-                            billing_month=10,
-                            billing_year=2026,
-                            status=status,
-                            working_reading=reading,
-                            remark="Billed via Smart Engine V2"
-                        )
-                        print(f"  [+] SaaS API updated immediately: CA {ca} -> {status} (Reading: {reading})")
-                    except Exception as e:
-                        print(f"  [!] Real-time sync note: {e}")
-
         if reviews and self.client:
             print("\n[+] Syncing batch ledger with SaaS API...")
             res = self.client.submit_batch_sync(reviews)
-            print(f"[+] SaaS Sync complete: {res.get('synced_count', 0)} synced.")
+            print(f"[✓] SaaS Sync complete: {res.get('synced_count', 0)} synced.")
 
         batch_elapsed = round(time.time() - batch_t0, 2)
         avg_speed = round(batch_elapsed / max(processed, 1), 2)

@@ -28,77 +28,52 @@ class Screen1Search:
             except Exception:
                 pass
 
-        # 1. Clean return to ConsumerSearchActivity
+        # 1. Start clean ConsumerSearchActivity directly
         self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
-        time.sleep(0.3)
 
-        # 2. Enter CA number into bh_AccNo1search with strict sanitization
+        # 2. Enter CA number into bh_AccNo1search
         input_field = self.d(resourceId="in.phoenix.bpdcl:id/bh_AccNo1search")
         if input_field.wait(timeout=2.0):
             try:
-                input_field.click()
-                time.sleep(0.1)
                 input_field.clear_text()
             except Exception:
                 pass
-
-            # Send backspaces to erase any stale digits
-            dpad_del = " ".join(["67"] * 25)
-            self.d.shell(f"input keyevent 123 {dpad_del}")
-            time.sleep(0.1)
-
             input_field.set_text(str(ca_number))
-            time.sleep(0.15)
-
-            # Verification check: Ensure input matches ca_number exactly
-            try:
-                entered = input_field.get_text()
-                if entered != str(ca_number):
-                    # Fallback input via shell
-                    self.d.shell(f"input keyevent 123 {dpad_del}; input text {ca_number}")
-            except Exception:
-                pass
         else:
-            dpad_del = " ".join(["67"] * 25)
-            self.d.shell(f"input tap 727 543; input keyevent 123 {dpad_del}; input text {ca_number}")
+            self.d.shell(f"input tap 727 543; input text {ca_number}")
 
-        # Hide soft keyboard so Search button is never obscured
-        try:
-            self.d.press("back")
-            time.sleep(0.15)
-        except Exception:
-            pass
-
-        # 3. Click Search button
-        search_btn = self.d(text="Search")
-        if not search_btn.click_exists(timeout=0.5):
-            search_btn2 = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
-            if not search_btn2.click_exists(timeout=0.2):
-                self.d.shell("input tap 450 726")
+        # 3. Immediately click Search button (zero-sleep, no redundant XML dumps)
+        search_btn = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
+        if not search_btn.click_exists(timeout=0.1):
+            # Fast fallback: dismiss keyboard (if active) and tap coordinates (450, 726)
+            self.d.shell("input keyevent 4; input tap 450 726")
 
         # 4. Dynamic Event Loop: Wait for BillingManual OR Alert popup
-        # Direct element inspection for speed and stability
         t_start = time.time()
-        ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
-        alert = self.d(resourceId="android:id/alertTitle")
-
         while time.time() - t_start < timeout:
-            if ps_btn.exists(timeout=0.05):
-                time.sleep(0.3)
-                print(f"  [+] BillingManual reached and settled in {round(time.time() - t_start, 2)}s!")
-                return True
-
+            # Check for error / warning alerts first
+            alert = self.d(resourceId="android:id/alertTitle")
             if alert.exists(timeout=0.05):
                 title = alert.get_text() if alert.exists() else "Alert"
                 msg_elem = self.d(resourceId="android:id/message")
                 msg = msg_elem.get_text() if msg_elem.exists() else ""
                 print(f"  [!] Alert detected: '{title}' - '{msg}'")
                 btn1 = self.d(resourceId="android:id/button1")
-                if btn1.wait(timeout=0.5):
+                if btn1.exists(timeout=0.5):
                     btn1.click()
-                elif self.d(text="OK").exists:
-                    self.d(text="OK").click()
                 return False
+
+            # Check if BillingManual is reached (via activity name or PresentStatus1)
+            act = ""
+            try:
+                act = self.d.app_current().get("activity", "")
+            except Exception:
+                pass
+
+            ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
+            if "BillingManual" in act or ps_btn.exists(timeout=0.05):
+                print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
+                return True
 
             time.sleep(0.08)
 
