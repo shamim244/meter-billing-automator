@@ -31,3 +31,10 @@ logs/
 .claude/
 .superpowers/
 chat/.agent/
+
+# Environment files & credentials
+.env
+.env.*
+chat/.env
+!.env.example
+
