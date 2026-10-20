@@ -30,10 +30,19 @@ class Screen3Camera:
         for attempt in range(1, 4):
             print(f"  [2] Camera Capture Attempt {attempt}/3...")
             shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
-            if shutter.wait(timeout=2.0):
-                shutter.click()
-            else:
-                self.d.click(794, 2256)
+            clicked = False
+            try:
+                if shutter.wait(timeout=1.0):
+                    shutter.click()
+                    clicked = True
+            except Exception:
+                clicked = False
+
+            if not clicked:
+                try:
+                    self.d.click(794, 2256)
+                except Exception:
+                    pass
 
             # Wait up to 3.5s for input dialog or alert
             t_cap = time.time()
@@ -106,11 +115,21 @@ class Screen3Camera:
                 pass
 
             save_btn = self.d(text="Save")
-            if save_btn.wait(timeout=1.5):
-                print("  [*] Tapping Save button...")
-                save_btn.click()
-            else:
-                self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
+            print("  [*] Tapping Save button...")
+            saved = False
+            try:
+                if save_btn.wait(timeout=1.5):
+                    save_btn.click()
+                    saved = True
+            except Exception:
+                saved = False
+
+            if not saved:
+                try:
+                    if not self.d(resourceId="android:id/button1").click_exists(timeout=0.5):
+                        self.d.click(870, 1389)
+                except Exception:
+                    pass
 
         # 4. Multi-dialog Race Condition Watcher
         print("  [4] Watching for popups, revalidation alerts, and BillingManual return...")
@@ -145,29 +164,29 @@ class Screen3Camera:
 
             # Check for Revalidation / Doubt warning
             if not revalidation_handled:
-                reval_btn = self.d(resourceId="in.coral.bpdcl:id/revalidate_btn")
-                if reval_btn.exists(timeout=0.05):
-                    print("  [*] Revalidation required! Executing dynamic override sequence...")
-                    reval_btn.click()
-                    rep_btn = self.d(resourceId="in.coral.bpdcl:id/btn_report")
-                    if rep_btn.wait(timeout=2.0):
-                        rep_btn.click()
-                    correct_opt = self.d(text="Readings are correct")
-                    if correct_opt.wait(timeout=2.0):
-                        print("  [*] Selected 'Readings are correct' remark.")
-                        correct_opt.click()
-                    # Final submit inside MR Bharat
-                    submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
-                    if submit_btn.wait(timeout=2.0):
-                        print("  [*] Tapping final Submit in MR Bharat...")
-                        submit_btn.click()
-                    else:
-                        print("  [*] Fallback tap for MR Bharat submit (792, 2231)...")
-                        self.d.click(792, 2231)
-                    revalidation_handled = True
-                    t_loop = time.time()
-                    time.sleep(0.5)
-                    continue
+                try:
+                    reval_btn = self.d(resourceId="in.coral.bpdcl:id/revalidate_btn")
+                    if reval_btn.exists(timeout=0.05):
+                        print("  [*] Revalidation required! Executing dynamic override sequence...")
+                        reval_btn.click_exists(timeout=1.0)
+                        rep_btn = self.d(resourceId="in.coral.bpdcl:id/btn_report")
+                        if rep_btn.exists(timeout=2.0):
+                            rep_btn.click_exists(timeout=1.0)
+                        correct_opt = self.d(text="Readings are correct")
+                        if correct_opt.exists(timeout=2.0):
+                            print("  [*] Selected 'Readings are correct' remark.")
+                            correct_opt.click_exists(timeout=1.0)
+                        # Final submit inside MR Bharat
+                        submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
+                        if not submit_btn.click_exists(timeout=2.0):
+                            print("  [*] Fallback tap for MR Bharat submit (792, 2231)...")
+                            self.d.click(792, 2231)
+                        revalidation_handled = True
+                        t_loop = time.time()
+                        time.sleep(0.5)
+                        continue
+                except Exception as e_rev:
+                    print(f"  [!] Revalidation sequence exception: {e_rev}")
 
             # Direct Submit or Save & Validate Later button in MR Bharat review screen
             submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")

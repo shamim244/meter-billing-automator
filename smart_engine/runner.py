@@ -243,7 +243,17 @@ class SmartRunner:
                 print(f"  [*] Max Ceiling Clamped: Base {entry.get('base_avg_units')} kWh -> Tuned {entry.get('tuned_avg_units')} kWh (Reading: {reading})")
 
             print(f"\n--- [{idx}/{len(consumers)}] CA={ca} ({name}) ---")
-            ok, status = self.process_consumer(ca, reading_kwh=reading, meter_type=meter_type)
+            try:
+                ok, status = self.process_consumer(ca, reading_kwh=reading, meter_type=meter_type)
+            except Exception as e_proc:
+                print(f"  [!] Exception during CA {ca}: {e_proc}")
+                print(f"  [*] Safely resetting device to ConsumerSearchActivity for next consumer...")
+                try:
+                    if self.d:
+                        self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
+                except Exception:
+                    pass
+                ok, status = False, "doubt"
 
             if ok:
                 processed += 1

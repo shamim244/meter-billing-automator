@@ -32,19 +32,22 @@ class Screen4Submit:
 
         # 2. Tap Submit button
         submit_btn = self.d(resourceId="in.phoenix.bpdcl:id/Submit")
-        if submit_btn.wait(timeout=2.0):
-            print("  [*] Tapping NBPDCL Submit button...")
-            submit_btn.click()
-        else:
-            self.d.click(293, 2267)
+        print("  [*] Tapping NBPDCL Submit button...")
+        if not submit_btn.click_exists(timeout=2.0):
+            try:
+                self.d.click(293, 2267)
+            except Exception:
+                pass
 
         # 3. Confirm YES on Alert dialog
         yes_btn = self.d(resourceId="android:id/button1")
-        if yes_btn.wait(timeout=2.0) and "YES" in yes_btn.get_text():
-            print("  [+] Confirming YES on Bill Generation Dialog...")
-            yes_btn.click()
+        if not yes_btn.click_exists(timeout=2.0):
+            try:
+                self.d.click(900, 1388)
+            except Exception:
+                pass
         else:
-            self.d.click(900, 1388)
+            print("  [+] Confirmed YES on Bill Generation Dialog...")
 
         # 4. Wait for BillPrintOnline1
         t_start = time.time()
@@ -62,12 +65,16 @@ class Screen4Submit:
 
         if print_ready:
             print("  [+] Bill Print Screen loaded! Returning to Search...")
-            self.d.swipe(540, 2000, 540, 300)
+            try:
+                self.d.swipe(540, 2000, 540, 300)
+            except Exception:
+                pass
             back_btn = self.d(resourceId="in.phoenix.bpdcl:id/printback")
-            if back_btn.wait(timeout=1.5):
-                back_btn.click()
-            else:
-                self.d.click(718, 2305)
+            if not back_btn.click_exists(timeout=1.5):
+                try:
+                    self.d.click(718, 2305)
+                except Exception:
+                    pass
             time.sleep(0.3)
 
         # Always ensure device returns to ConsumerSearchActivity for next batch item
