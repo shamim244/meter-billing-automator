@@ -26,9 +26,9 @@ class Screen4Submit:
         print("\n[*] [Screen 4] Executing Final NBPDCL Bill Generation...")
         # 1. Scroll to bottom of BillingManual
         self.d.swipe(540, 1800, 540, 400)
-        time.sleep(0.2)
+        time.sleep(0.02)
         self.d.swipe(540, 1800, 540, 400)
-        time.sleep(0.2)
+        time.sleep(0.02)
 
         # 2. Tap Submit button
         submit_btn = self.d(resourceId="in.phoenix.bpdcl:id/Submit")
