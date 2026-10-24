@@ -84,5 +84,16 @@ class TestScreen3Camera(unittest.TestCase):
         input_field.set_text.assert_called_with("1355")
         shutter.click.assert_called()
 
+    def test_defective_camera_flow(self):
+        mock_d = MagicMock()
+        mock_d.app_current.side_effect = [
+            {"activity": "MeterReadingActivity", "package": "in.coral.bpdcl"},
+            {"activity": "CapturePhotoActivity", "package": "in.coral.bpdcl"},
+            {"activity": "BillingManual", "package": "in.phoenix.bpdcl"}
+        ]
+        s3 = Screen3Camera(device=mock_d)
+        res = s3.handle_defective_camera(timeout=2.0)
+        self.assertTrue(res)
+
 if __name__ == "__main__":
     unittest.main()

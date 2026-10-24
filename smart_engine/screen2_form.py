@@ -17,7 +17,7 @@ class Screen2Form:
         t_start = time.time()
         print("\n[*] [Screen 2] Fast Filling BillingManual Form...")
         is_defective = (str(meter_type).upper() == "DEFECTIVE")
-        target_status = "METER DEFECTIVE" if is_defective else "NORMAL"
+        target_status = "Meter Defective" if is_defective else "NORMAL"
 
         # 1. Select Present Status
         print(f"  [1] Selecting Present Status: {target_status}...")
@@ -28,19 +28,28 @@ class Screen2Form:
 
         ps_btn.click()
         if not self.d(text=target_status).click_exists(timeout=0.3):
-            self.d(textContains=target_status).click_exists(timeout=0.2)
+            if not self.d(text="METER DEFECTIVE").click_exists(timeout=0.2):
+                self.d(textContains="DEFECTIVE" if is_defective else "NORMAL").click_exists(timeout=0.2)
 
-        # 2. Select Site Observation (OK) with smart prefill bypass
+        # 2. Select Site Observation with smart prefill bypass
+        target_obs = "DEFECTIVE" if is_defective else "OK"
         obs_btn = self.d(resourceId="in.phoenix.bpdcl:id/atMOBS1")
         obs_text = obs_btn.get_text() if obs_btn.exists(timeout=0.05) else ""
-        if obs_text == "OK":
-            print("  [2] Site Observation already prefilled with 'OK' – Fast-path bypass!")
+        if obs_text == target_obs:
+            print(f"  [2] Site Observation already prefilled with '{target_obs}' – Fast-path bypass!")
         else:
-            print("  [2] Selecting Site Observation: OK...")
+            print(f"  [2] Selecting Site Observation: {target_obs}...")
             if obs_btn.click_exists(timeout=0.2):
-                # Fast DPAD sequence via direct socket shell (delay 2ms)
-                dpad = " ".join(["20"] * 30)
-                self.d.shell(f"input keyevent --delay 2 {dpad} 19 66")
+                if is_defective:
+                    if not self.d(text="DEFECTIVE").click_exists(timeout=0.3):
+                        if not self.d(textContains="DEFECTIVE").click_exists(timeout=0.2):
+                            # DPAD down to bottom (DEFECTIVE is last of 6 options) and press enter
+                            dpad = " ".join(["20"] * 30)
+                            self.d.shell(f"input keyevent --delay 2 {dpad} 66")
+                else:
+                    # Fast DPAD sequence via direct socket shell (delay 2ms)
+                    dpad = " ".join(["20"] * 30)
+                    self.d.shell(f"input keyevent --delay 2 {dpad} 19 66")
             else:
                 self.d.shell("input tap 691 1942")
 

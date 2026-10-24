@@ -120,7 +120,13 @@ class SmartRunner:
             return False, "doubt"
 
         # Screen 3: Camera Capture, Reading Entry & Doubt Resolver
-        if not self.s3.handle_camera_and_review(reading_kwh=reading_kwh):
+        is_defective = (str(meter_type).upper() == "DEFECTIVE")
+        if is_defective:
+            s3_ok = self.s3.handle_defective_camera()
+        else:
+            s3_ok = self.s3.handle_camera_and_review(reading_kwh=reading_kwh)
+
+        if not s3_ok:
             print("  [!] Screen 3 Camera / Review failed.")
             return False, "doubt"
 
