@@ -52,6 +52,15 @@ class SmartRunner:
         self.adjust_percent = float(adjust_percent) if adjust_percent is not None else None
         self.target_ca = str(ca).strip() if ca else None
 
+        # Parse billing cycle into month and year
+        month_map = {
+            "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+            "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12
+        }
+        parts = self.cycle.upper().split("-")
+        self.cycle_month = month_map.get(parts[0], 11)
+        self.cycle_year = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 2026
+
         self.d = None
         if not dry_run:
             if u2 is None:
@@ -273,8 +282,8 @@ class SmartRunner:
                 try:
                     self.client.submit_review(
                         ca_number=ca,
-                        billing_month=10,
-                        billing_year=2026,
+                        billing_month=self.cycle_month,
+                        billing_year=self.cycle_year,
                         status=status,
                         working_reading=reading,
                         remark=f"Smart Engine V2 Auto-Submitted ({reading} KWH)"
@@ -287,15 +296,15 @@ class SmartRunner:
                 rev = build_review(
                     ca_number=ca,
                     status=status,
-                    billing_month=10,
-                    billing_year=2026,
+                    billing_month=self.cycle_month,
+                    billing_year=self.cycle_year,
                     working_reading=reading
                 )
                 reviews.append(rev)
 
         if reviews and self.client:
             print("\n[+] Syncing batch ledger with SaaS API...")
-            res = self.client.submit_batch_sync(reviews)
+            res = self.client.submit_batch_sync(reviews, billing_month=self.cycle_month, billing_year=self.cycle_year)
             print(f"[✓] SaaS Sync complete: {res.get('synced_count', 0)} synced.")
 
         batch_elapsed = round(time.time() - batch_t0, 2)

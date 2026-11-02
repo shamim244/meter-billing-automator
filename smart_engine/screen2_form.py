@@ -31,16 +31,11 @@ class Screen2Form:
             print("  [!] PresentStatus1 not found!")
             return False
 
-        # Tap Present Status spinner (Cached -> Selector)
-        if not self.cache.tap("screen2.present_status", self.d, selector_obj=ps_btn):
-            ps_btn.click()
-
-        # Tap target status option
+        ps_btn.click()
         status_sel = self.d(text=target_status)
-        if not self.cache.tap(f"screen2.status_{target_status}", self.d, selector_obj=status_sel):
-            if not status_sel.click_exists(timeout=0.3):
-                if not self.d(text="METER DEFECTIVE").click_exists(timeout=0.2):
-                    self.d(textContains="DEFECTIVE" if is_defective else "NORMAL").click_exists(timeout=0.2)
+        if not status_sel.click_exists(timeout=0.4):
+            if not self.d(text="METER DEFECTIVE").click_exists(timeout=0.2):
+                self.d(textContains="DEFECTIVE" if is_defective else "NORMAL").click_exists(timeout=0.2)
 
         # 2. Select Site Observation with smart prefill bypass
         target_obs = "DEFECTIVE" if is_defective else "OK"
@@ -54,24 +49,20 @@ class Screen2Form:
             print(f"  [2] Site Observation already prefilled with '{target_obs}' – Fast-path bypass!")
         else:
             print(f"  [2] Selecting Site Observation: {target_obs}...")
-            obs_tapped = self.cache.tap("screen2.obs_btn", self.d, selector_obj=obs_btn, fallback_coords=(691, 1942))
-            if not obs_tapped and not obs_btn.click_exists(timeout=0.2):
+            if not obs_btn.click_exists(timeout=0.3):
                 self.d.shell("input tap 691 1942")
 
             if is_defective:
                 def_sel = self.d(text="DEFECTIVE")
-                if not self.cache.tap("screen2.obs_defective", self.d, selector_obj=def_sel):
-                    if not def_sel.click_exists(timeout=0.3):
-                        if not self.d(textContains="DEFECTIVE").click_exists(timeout=0.2):
-                            # DPAD down to bottom (DEFECTIVE is last of 6 options) and press enter
-                            dpad = " ".join(["20"] * 30)
-                            self.d.shell(f"input keyevent --delay 2 {dpad} 66")
+                if not def_sel.click_exists(timeout=0.4):
+                    if not self.d(textContains="DEFECTIVE").click_exists(timeout=0.2):
+                        # DPAD down to bottom (DEFECTIVE is last of 6 options) and press enter
+                        dpad = " ".join(["20"] * 30)
+                        self.d.shell(f"input keyevent --delay 2 {dpad} 66")
             else:
-                ok_sel = self.d(text="OK")
-                if not self.cache.tap("screen2.obs_ok", self.d, selector_obj=ok_sel):
-                    # Fast DPAD sequence via direct socket shell (delay 2ms)
-                    dpad = " ".join(["20"] * 30)
-                    self.d.shell(f"input keyevent --delay 2 {dpad} 19 66")
+                # Fast DPAD sequence via direct socket shell (delay 2ms)
+                dpad = " ".join(["20"] * 30)
+                self.d.shell(f"input keyevent --delay 2 {dpad} 19 66")
 
         # 3. Select Meter Location Type (Inside) with smart prefill bypass
         loc_btn = self.d(resourceId="in.phoenix.bpdcl:id/meterloctypeiv")
@@ -84,24 +75,22 @@ class Screen2Form:
             print("  [3] Meter Location already prefilled with 'Inside' – Fast-path bypass!")
         else:
             print("  [3] Selecting Meter Location: Inside...")
-            loc_tapped = self.cache.tap("screen2.loc_btn", self.d, selector_obj=loc_btn, fallback_coords=(691, 1790))
-            if not loc_tapped and not loc_btn.click_exists(timeout=0.2):
+            if not loc_btn.click_exists(timeout=0.3):
                 self.d.shell("input tap 691 1790")
 
             inside_sel = self.d(text="Inside")
-            if not self.cache.tap("screen2.loc_inside", self.d, selector_obj=inside_sel):
-                if not inside_sel.click_exists(timeout=0.3):
-                    self.d(textContains="Inside").click_exists(timeout=0.2)
+            if not inside_sel.click_exists(timeout=0.4):
+                self.d(textContains="Inside").click_exists(timeout=0.2)
 
         # 4. Launch Camera via KwhCaptureButton (Zero sleep)
         print("  [4] Tapping KwhCaptureButton to launch MR Bharat...")
         cam_btn = self.d(resourceId="in.phoenix.bpdcl:id/KwhCaptureButton")
-        if not self.cache.tap("screen2.cam_btn", self.d, selector_obj=cam_btn, fallback_coords=(440, 1239)):
-            if not cam_btn.click_exists(timeout=0.2):
-                self.d.click(440, 1239)
+        if not cam_btn.click_exists(timeout=0.5):
+            self.d.click(440, 1239)
 
         # 5. Event-based wait for MR Bharat screen
         t_wait = time.time()
+        retried_cam = False
         while time.time() - t_wait < timeout:
             # Check fast activity first (~110ms)
             _, act = fast_get_current_activity(self.d)
@@ -115,7 +104,14 @@ class Screen2Form:
                 print(f"  [+] MR Bharat reached in {round(time.time() - t_start, 2)}s!")
                 return True
 
-            time.sleep(0.05)
+            # If 2.5s pass and still on BillingManual, retry camera button tap once
+            if not retried_cam and time.time() - t_wait > 2.5:
+                retried_cam = True
+                print("  [*] Retrying KwhCaptureButton tap...")
+                if not cam_btn.click_exists(timeout=0.3):
+                    self.d.click(440, 1239)
+
+            time.sleep(0.08)
 
         print("  [!] Timed out waiting for MR Bharat to launch.")
         return False

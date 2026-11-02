@@ -31,11 +31,14 @@ class UniversalUICache:
 
     def get_resolution(self, d):
         """
-        Retrieves device screen resolution (width, height).
+        Retrieves device screen resolution (width, height) and enforces fast wait timeouts.
         """
         if not d:
             return (1080, 2400)
         try:
+            # Enforce 2.0s maximum wait timeout to prevent 20-second hanging freezes on missing elements
+            if hasattr(d, "settings") and isinstance(d.settings, dict):
+                d.settings["wait_timeout"] = 2.0
             ws = d.window_size()
             if isinstance(ws, (tuple, list)) and len(ws) >= 2:
                 # Ensure width is smaller dimension for portrait
@@ -102,11 +105,15 @@ class UniversalUICache:
     def resolve_and_cache(self, key, d, selector_obj):
         """
         Attempts to read bounds from selector_obj.info and caches them.
+        Guarded by exists check to avoid blocking on u2 wait_timeout.
         Returns (cx, cy) if successful, None otherwise.
         """
         if not selector_obj or not d:
             return None
         try:
+            # Check existence first so we never trigger an objInfo timeout block
+            if hasattr(selector_obj, "exists") and not selector_obj.exists(timeout=0.08):
+                return None
             info = selector_obj.info
             bounds = info.get("bounds")
             if bounds:
@@ -208,7 +215,7 @@ def fast_get_current_activity(d):
     if not d:
         return "", ""
     try:
-        out = d.shell("dumpsys window windows | grep mCurrentFocus").output or ""
+        out = d.shell("dumpsys window | grep mCurrentFocus").output or ""
         m = re.search(r"mCurrentFocus=Window\{[^\}]*\s+([^\s/\}]+)/([^\s/\}]+)", out)
         if m:
             return m.group(1), m.group(2)

@@ -47,12 +47,19 @@ class Screen1Search:
         else:
             self.d.shell(f"input tap 727 543; input text {ca_number}")
 
+        # Immediately dismiss soft keyboard so cons_search is visible and no keyboard touches occur
+        try:
+            self.d.press("back")
+            time.sleep(0.05)
+        except Exception:
+            pass
+
         # 3. Click Search button (Universal Cache -> Selector -> Scaled fallback)
         search_btn = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
         tapped = self.cache.tap("screen1.search_btn", self.d, selector_obj=search_btn, fallback_coords=(450, 726))
         if not tapped:
-            if not search_btn.click_exists(timeout=0.1):
-                self.d.shell("input keyevent 4; input tap 450 726")
+            if not search_btn.click_exists(timeout=0.5):
+                self.d.click(450, 726)
 
         # 4. Dynamic Event Loop: Wait for BillingManual OR Alert popup
         t_start = time.time()
