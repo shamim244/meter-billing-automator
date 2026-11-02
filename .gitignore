@@ -38,3 +38,6 @@ chat/.agent/
 chat/.env
 !.env.example
 
+# Runtime caches
+data/ui_cache.json
+

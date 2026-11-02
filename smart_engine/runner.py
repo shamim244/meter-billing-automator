@@ -23,6 +23,7 @@ from smart_engine.screen2_form import Screen2Form
 from smart_engine.screen3_camera import Screen3Camera
 from smart_engine.screen4_submit import Screen4Submit
 from smart_engine.device import resolve_device_serial
+from smart_engine.ui_cache import UniversalUICache
 
 try:
     import uiautomator2 as u2
@@ -299,6 +300,7 @@ class SmartRunner:
 
         batch_elapsed = round(time.time() - batch_t0, 2)
         avg_speed = round(batch_elapsed / max(processed, 1), 2)
+        UniversalUICache.get_instance().save_cache()
         print(f"\n{'='*60}")
         print(f"[+] Batch Finished: {processed}/{len(consumers)} in {batch_elapsed}s (Avg: {avg_speed}s/meter, {failed} failed)")
         print(f"{'='*60}\n")

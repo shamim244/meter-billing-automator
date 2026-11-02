@@ -1,13 +1,14 @@
 """
 screen3_camera.py – Screen 3: High-Speed MR Bharat Camera & Review Controller (in.coral.bpdcl).
 Captures photo, enters reading, resolves secondary popup, and overrides doubt alerts.
-Uses non-blocking element waiters and an event-driven race condition watcher to minimize latency.
+Uses universal coordinate caching, non-blocking element waiters, and an event-driven watcher to minimize latency.
 """
 import os
 import sys
 import time
 import uiautomator2 as u2
 from smart_engine.device import resolve_device_serial
+from smart_engine.ui_cache import UniversalUICache, fast_get_current_activity
 
 class Screen3Camera:
     def __init__(self, device=None, serial=None):
@@ -15,6 +16,7 @@ class Screen3Camera:
             serial = resolve_device_serial(serial)
         self.d = device or u2.connect(serial)
         self.serial = serial
+        self.cache = UniversalUICache.get_instance()
 
     def handle_camera_and_review(self, reading_kwh=1355, timeout=25.0):
         t0 = time.time()
@@ -33,13 +35,14 @@ class Screen3Camera:
         for attempt in range(1, 4):
             print(f"  [2] Camera Capture Attempt {attempt}/3...")
             shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
-            clicked = False
-            try:
-                if shutter.wait(timeout=1.0):
-                    shutter.click()
-                    clicked = True
-            except Exception:
-                clicked = False
+            clicked = self.cache.tap("screen3.shutter", self.d, selector_obj=shutter, fallback_coords=(794, 2256))
+            if not clicked:
+                try:
+                    if shutter.wait(timeout=1.0):
+                        shutter.click()
+                        clicked = True
+                except Exception:
+                    clicked = False
 
             if not clicked:
                 try:
@@ -75,7 +78,8 @@ class Screen3Camera:
                 break
 
         # Check if already in MeterReadingActivity review screen or wait for input
-        in_review = "MeterReadingActivity" in (self.d.app_current().get("activity", "") or "")
+        _, cur_act = fast_get_current_activity(self.d)
+        in_review = "MeterReadingActivity" in cur_act
         if not input_found and not in_review and not input_field.wait(timeout=2.0):
             print("  [!] Reading input field not found after camera retries!")
             return False
@@ -85,47 +89,30 @@ class Screen3Camera:
             print(f"  [3] Injecting KWH Reading: {reading_kwh}...")
             try:
                 input_field.click()
-                time.sleep(0.15)
+                time.sleep(0.1)
             except Exception:
                 pass
 
-            # Select all and clear existing text / OCR residue
-            try:
-                input_field.clear_text()
-            except Exception:
-                pass
-
-            # Send explicit backspaces to ensure field is 100% clean
-            dpad_del = " ".join(["67"] * 20)
-            self.d.shell(f"input keyevent 123 {dpad_del}")
-
-            # Inject the correct reading
+            # Inject the correct reading directly via set_text
             input_field.set_text(str(reading_kwh))
             
-            # Verify text was entered; fallback to shell input if needed
-            try:
-                curr_text = input_field.get_text()
-                if not curr_text or curr_text != str(reading_kwh):
-                    self.d.shell(f"input text {reading_kwh}")
-            except Exception:
-                pass
-
-            # Dismiss soft keyboard so Save button is not obscured
+            # Dismiss soft keyboard if present
             try:
                 self.d.press("back")
-                time.sleep(0.15)
+                time.sleep(0.1)
             except Exception:
                 pass
 
             save_btn = self.d(text="Save")
             print("  [*] Tapping Save button...")
-            saved = False
-            try:
-                if save_btn.wait(timeout=1.5):
-                    save_btn.click()
-                    saved = True
-            except Exception:
-                saved = False
+            saved = self.cache.tap("screen3.save_btn", self.d, selector_obj=save_btn, fallback_coords=(870, 1389))
+            if not saved:
+                try:
+                    if save_btn.wait(timeout=1.5):
+                        save_btn.click()
+                        saved = True
+                except Exception:
+                    saved = False
 
             if not saved:
                 try:
@@ -140,16 +127,8 @@ class Screen3Camera:
         revalidation_handled = False
 
         while time.time() - t_loop < timeout:
-            # Check if returned to BillingManual
-            act = ""
-            pkg = ""
-            try:
-                cur = self.d.app_current()
-                act = cur.get("activity", "")
-                pkg = cur.get("package", "")
-            except Exception:
-                pass
-
+            # Check fast activity check first
+            pkg, act = fast_get_current_activity(self.d)
             if "BillingManual" in act or ("in.phoenix.bpdcl" in pkg and "coral" not in pkg):
                 print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
                 return True
@@ -162,7 +141,7 @@ class Screen3Camera:
                 print(f"  [+] Confirmation popup detected ('{btn_text}')! Tapping button...")
                 sec_submit.click_exists(timeout=0.5)
                 t_loop = time.time()
-                time.sleep(0.3)
+                time.sleep(0.2)
                 continue
 
             # Check for Revalidation / Doubt warning
@@ -181,12 +160,13 @@ class Screen3Camera:
                             correct_opt.click_exists(timeout=1.0)
                         # Final submit inside MR Bharat
                         submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
-                        if not submit_btn.click_exists(timeout=2.0):
-                            print("  [*] Fallback tap for MR Bharat submit (792, 2231)...")
-                            self.d.click(792, 2231)
+                        if not self.cache.tap("screen3.submit_btn", self.d, selector_obj=submit_btn, fallback_coords=(792, 2231)):
+                            if not submit_btn.click_exists(timeout=2.0):
+                                print("  [*] Fallback tap for MR Bharat submit (792, 2231)...")
+                                self.d.click(792, 2231)
                         revalidation_handled = True
                         t_loop = time.time()
-                        time.sleep(0.5)
+                        time.sleep(0.3)
                         continue
                 except Exception as e_rev:
                     print(f"  [!] Revalidation sequence exception: {e_rev}")
@@ -197,15 +177,15 @@ class Screen3Camera:
             if submit_btn.click_exists(timeout=0.1):
                 print("  [*] Tapping direct Submit in MR Bharat...")
                 t_loop = time.time()
-                time.sleep(0.4)
+                time.sleep(0.3)
                 continue
             elif save_later_btn.click_exists(timeout=0.1):
                 print("  [*] Tapping 'Save Readings and Validate Later' in MR Bharat...")
                 t_loop = time.time()
-                time.sleep(0.4)
+                time.sleep(0.3)
                 continue
 
-            time.sleep(0.1)
+            time.sleep(0.08)
 
         print("  [!] Timed out in MR Bharat review/submit stage.")
         return False
@@ -217,37 +197,36 @@ class Screen3Camera:
         # 1. Wait for Coral MeterReadingActivity (up to 4.0s)
         t_wait = time.time()
         while time.time() - t_wait < 4.0:
-            act = ""
-            try:
-                act = self.d.app_current().get("activity", "")
-            except Exception:
-                pass
+            pkg, act = fast_get_current_activity(self.d)
             if "MeterReadingActivity" in act or self.d(resourceId="in.coral.bpdcl:id/rdbtn_defective").exists(timeout=0.08):
                 break
-            time.sleep(0.1)
+            time.sleep(0.08)
 
         # 2. Select Defective/Burnt radio button (3rd option)
         print("  [1] Selecting 'Defective/Burnt' radio button...")
         defective_radio = self.d(resourceId="in.coral.bpdcl:id/rdbtn_defective")
-        if not defective_radio.click_exists(timeout=1.0):
-            if not self.d(textContains="Defective").click_exists(timeout=0.5):
-                self.d.click(822, 591)
-        time.sleep(0.3)
+        if not self.cache.tap("screen3.defective_radio", self.d, selector_obj=defective_radio, fallback_coords=(822, 591)):
+            if not defective_radio.click_exists(timeout=1.0):
+                if not self.d(textContains="Defective").click_exists(timeout=0.5):
+                    self.d.click(822, 591)
+        time.sleep(0.2)
 
         # 3. Select 'Actually Defective' from Abnormalities popup
         print("  [2] Selecting 'Actually Defective' from Abnormalities...")
         act_def = self.d(text="Actually Defective")
-        if not act_def.click_exists(timeout=1.5):
-            if not self.d(textContains="Actually Defective").click_exists(timeout=0.5):
-                self.d.click(563, 405)
-        time.sleep(0.3)
+        if not self.cache.tap("screen3.actually_defective", self.d, selector_obj=act_def, fallback_coords=(563, 405)):
+            if not act_def.click_exists(timeout=1.5):
+                if not self.d(textContains="Actually Defective").click_exists(timeout=0.5):
+                    self.d.click(563, 405)
+        time.sleep(0.2)
 
         # 4. Tap 'TAKE PHOTO' button
         print("  [3] Tapping 'TAKE PHOTO' button...")
         take_btn = self.d(resourceId="in.coral.bpdcl:id/take_pic_btn")
-        if not take_btn.click_exists(timeout=1.0):
-            if not self.d(text="TAKE PHOTO").click_exists(timeout=0.5):
-                self.d.click(540, 762)
+        if not self.cache.tap("screen3.take_photo", self.d, selector_obj=take_btn, fallback_coords=(540, 762)):
+            if not take_btn.click_exists(timeout=1.0):
+                if not self.d(text="TAKE PHOTO").click_exists(timeout=0.5):
+                    self.d.click(540, 762)
 
         # 5. Wait for Camera Viewfinder (CapturePhotoActivity) & Trigger Shutter
         print("  [4] Waiting for camera shutter in CapturePhotoActivity...")
@@ -256,32 +235,26 @@ class Screen3Camera:
         while time.time() - t_cam < 8.0:
             shutter = self.d(resourceId="in.coral.bpdcl:id/captureImageBtn")
             if shutter.exists(timeout=0.1):
-                shutter.click_exists(timeout=0.5)
-                shutter_clicked = True
+                shutter_clicked = self.cache.tap("screen3.defective_shutter", self.d, selector_obj=shutter, fallback_coords=(540, 2313))
+                if not shutter_clicked:
+                    shutter.click_exists(timeout=0.5)
+                    shutter_clicked = True
                 print("  [+] Camera shutter captured!")
                 break
-            time.sleep(0.1)
+            time.sleep(0.08)
 
         if not shutter_clicked:
             print("  [*] Fallback tap for camera shutter (540, 2313)...")
             self.d.click(540, 2313)
 
-        time.sleep(0.5)
+        time.sleep(0.3)
 
         # 6. Return to MeterReadingActivity review & Tap Coral Submit
         print("  [5] Tapping final Submit in MR Bharat review...")
         t_rev = time.time()
         while time.time() - t_rev < timeout:
             # Check if returned to BillingManual
-            act = ""
-            pkg = ""
-            try:
-                cur = self.d.app_current()
-                act = cur.get("activity", "")
-                pkg = cur.get("package", "")
-            except Exception:
-                pass
-
+            pkg, act = fast_get_current_activity(self.d)
             if "BillingManual" in act or ("in.phoenix.bpdcl" in pkg and "coral" not in pkg):
                 print(f"\n>>> [SUCCESS] Screen 3 Complete (Defective): Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
                 return True
@@ -292,19 +265,20 @@ class Screen3Camera:
                 btn_text = (sec_submit.get_text() or "Submit").strip()
                 print(f"  [+] Confirmation popup detected ('{btn_text}')! Tapping button...")
                 sec_submit.click_exists(timeout=0.5)
-                time.sleep(0.3)
+                time.sleep(0.2)
                 continue
 
             # Tap Submit in MR Bharat review
             submit_btn = self.d(resourceId="in.coral.bpdcl:id/submit_btn")
-            if submit_btn.click_exists(timeout=0.2):
-                print("  [*] Tapped Submit in MR Bharat review...")
-                time.sleep(0.4)
-                continue
-            else:
-                self.d.click(792, 2231)
+            if not self.cache.tap("screen3.defective_submit", self.d, selector_obj=submit_btn, fallback_coords=(792, 2231)):
+                if submit_btn.click_exists(timeout=0.2):
+                    print("  [*] Tapped Submit in MR Bharat review...")
+                    time.sleep(0.3)
+                    continue
+                else:
+                    self.d.click(792, 2231)
 
-            time.sleep(0.1)
+            time.sleep(0.08)
 
         print("  [!] Timed out in Defective MR Bharat submit stage.")
         return False

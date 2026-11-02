@@ -1,12 +1,13 @@
 """
 screen4_submit.py – Screen 4: NBPDCL Final Submission & Stage-Only Safety Gate.
-Optimized for zero-subprocess resets and fast activity navigation.
+Optimized with universal coordinate caching, zero-subprocess resets, and fast activity navigation.
 """
 import os
 import sys
 import time
 import uiautomator2 as u2
 from smart_engine.device import resolve_device_serial
+from smart_engine.ui_cache import UniversalUICache, fast_get_current_activity
 
 class Screen4Submit:
     def __init__(self, device=None, serial=None):
@@ -14,6 +15,7 @@ class Screen4Submit:
             serial = resolve_device_serial(serial)
         self.d = device or u2.connect(serial)
         self.serial = serial
+        self.cache = UniversalUICache.get_instance()
 
     def handle_final_submit(self, do_submit=False, timeout=10.0):
         if not do_submit:
@@ -27,58 +29,63 @@ class Screen4Submit:
             return True
 
         print("\n[*] [Screen 4] Executing Final NBPDCL Bill Generation...")
-        # 1. Scroll to bottom of BillingManual
-        self.d.swipe(540, 1800, 540, 400)
+        # 1. Scroll to bottom of BillingManual (dynamic window size)
+        w, h = self.cache.get_resolution(self.d)
+        mid_x = w // 2
+        start_y = int(h * 0.75)
+        end_y = int(h * 0.18)
+        self.d.swipe(mid_x, start_y, mid_x, end_y)
         time.sleep(0.02)
-        self.d.swipe(540, 1800, 540, 400)
+        self.d.swipe(mid_x, start_y, mid_x, end_y)
         time.sleep(0.02)
 
-        # 2. Tap Submit button
+        # 2. Tap Submit button (Cached -> Selector -> Scaled fallback)
         submit_btn = self.d(resourceId="in.phoenix.bpdcl:id/Submit")
         print("  [*] Tapping NBPDCL Submit button...")
-        if not submit_btn.click_exists(timeout=2.0):
-            try:
-                self.d.click(293, 2267)
-            except Exception:
-                pass
+        if not self.cache.tap("screen4.submit_btn", self.d, selector_obj=submit_btn, fallback_coords=(293, 2267)):
+            if not submit_btn.click_exists(timeout=2.0):
+                try:
+                    self.d.click(293, 2267)
+                except Exception:
+                    pass
 
         # 3. Confirm YES on Alert dialog
         yes_btn = self.d(resourceId="android:id/button1")
-        if not yes_btn.click_exists(timeout=2.0):
-            try:
-                self.d.click(900, 1388)
-            except Exception:
-                pass
+        if not self.cache.tap("screen4.confirm_yes", self.d, selector_obj=yes_btn, fallback_coords=(900, 1388)):
+            if not yes_btn.click_exists(timeout=2.0):
+                try:
+                    self.d.click(900, 1388)
+                except Exception:
+                    pass
+            else:
+                print("  [+] Confirmed YES on Bill Generation Dialog...")
         else:
             print("  [+] Confirmed YES on Bill Generation Dialog...")
 
-        # 4. Wait for BillPrintOnline1
+        # 4. Wait for BillPrintOnline1 via fast activity check
         t_start = time.time()
         print_ready = False
         while time.time() - t_start < timeout:
-            act = ""
-            try:
-                act = self.d.app_current().get("activity", "")
-            except Exception:
-                pass
+            pkg, act = fast_get_current_activity(self.d)
             if "BillPrint" in act or "Print" in act:
                 print_ready = True
                 break
-            time.sleep(0.1)
+            time.sleep(0.08)
 
         if print_ready:
             print("  [+] Bill Print Screen loaded! Returning to Search...")
             try:
-                self.d.swipe(540, 2000, 540, 300)
+                self.d.swipe(mid_x, int(h * 0.83), mid_x, int(h * 0.12))
             except Exception:
                 pass
             back_btn = self.d(resourceId="in.phoenix.bpdcl:id/printback")
-            if not back_btn.click_exists(timeout=1.5):
-                try:
-                    self.d.click(718, 2305)
-                except Exception:
-                    pass
-            time.sleep(0.3)
+            if not self.cache.tap("screen4.print_back", self.d, selector_obj=back_btn, fallback_coords=(718, 2305)):
+                if not back_btn.click_exists(timeout=1.5):
+                    try:
+                        self.d.click(718, 2305)
+                    except Exception:
+                        pass
+            time.sleep(0.2)
 
         # Always ensure device returns to ConsumerSearchActivity for next batch item
         try:

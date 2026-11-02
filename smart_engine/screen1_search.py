@@ -1,12 +1,13 @@
 """
 screen1_search.py – Screen 1: High-Speed Consumer Search Controller (ConsumerSearchActivity).
-Uses direct am start, keyboard suppression, and dynamic event polling for BillingManual and alerts.
+Uses direct am start, universal coordinate caching, and dynamic event polling for BillingManual and alerts.
 """
 import os
 import sys
 import time
 import uiautomator2 as u2
 from smart_engine.device import resolve_device_serial
+from smart_engine.ui_cache import UniversalUICache, fast_get_current_activity
 
 class Screen1Search:
     def __init__(self, device=None, serial=None):
@@ -14,6 +15,7 @@ class Screen1Search:
             serial = resolve_device_serial(serial)
         self.d = device or u2.connect(serial)
         self.serial = serial
+        self.cache = UniversalUICache.get_instance()
 
     def search_consumer(self, ca_number, timeout=8.0):
         print(f"\n[*] [Screen 1] Fast Searching Consumer CA: {ca_number}...")
@@ -25,7 +27,7 @@ class Screen1Search:
 
         # Dismiss any lingering alerts from previous screen
         old_alert = self.d(resourceId="android:id/button1")
-        if old_alert.exists(timeout=0.1):
+        if old_alert.exists(timeout=0.05):
             try:
                 old_alert.click()
             except Exception:
@@ -45,16 +47,25 @@ class Screen1Search:
         else:
             self.d.shell(f"input tap 727 543; input text {ca_number}")
 
-        # 3. Immediately click Search button (zero-sleep, no redundant XML dumps)
+        # 3. Click Search button (Universal Cache -> Selector -> Scaled fallback)
         search_btn = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
-        if not search_btn.click_exists(timeout=0.1):
-            # Fast fallback: dismiss keyboard (if active) and tap coordinates (450, 726)
-            self.d.shell("input keyevent 4; input tap 450 726")
+        tapped = self.cache.tap("screen1.search_btn", self.d, selector_obj=search_btn, fallback_coords=(450, 726))
+        if not tapped:
+            if not search_btn.click_exists(timeout=0.1):
+                self.d.shell("input keyevent 4; input tap 450 726")
 
         # 4. Dynamic Event Loop: Wait for BillingManual OR Alert popup
         t_start = time.time()
         while time.time() - t_start < timeout:
-            # Check for error / warning alerts first
+            # Fast check if BillingManual is reached (via fast activity check or PresentStatus1)
+            _, act = fast_get_current_activity(self.d)
+            ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
+
+            if "BillingManual" in act or ps_btn.exists(timeout=0.05):
+                print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
+                return True
+
+            # If not yet at BillingManual, check if an error / warning alert appeared
             alert = self.d(resourceId="android:id/alertTitle")
             if alert.exists(timeout=0.05):
                 title = alert.get_text() if alert.exists() else "Alert"
@@ -66,19 +77,7 @@ class Screen1Search:
                     btn1.click()
                 return False
 
-            # Check if BillingManual is reached (via activity name or PresentStatus1)
-            act = ""
-            try:
-                act = self.d.app_current().get("activity", "")
-            except Exception:
-                pass
-
-            ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
-            if "BillingManual" in act or ps_btn.exists(timeout=0.05):
-                print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
-                return True
-
-            time.sleep(0.08)
+            time.sleep(0.05)
 
         print("  [!] Failed to reach BillingManual within timeout.")
         return False
