@@ -55,13 +55,13 @@ class SmartRunner:
         if not dry_run:
             if u2 is None:
                 raise RuntimeError("uiautomator2 required for live execution. Run 'pip install uiautomator2'.")
-            print(f"[+] Connecting to device: {device_serial}...")
-            self.d = u2.connect(device_serial)
+            print(f"[+] Connecting to device: {self.device_serial}...")
+            self.d = u2.connect(self.device_serial)
 
-        self.s1 = Screen1Search(device=self.d, serial=device_serial) if not dry_run else None
-        self.s2 = Screen2Form(device=self.d, serial=device_serial) if not dry_run else None
-        self.s3 = Screen3Camera(device=self.d, serial=device_serial) if not dry_run else None
-        self.s4 = Screen4Submit(device=self.d, serial=device_serial) if not dry_run else None
+        self.s1 = Screen1Search(device=self.d, serial=self.device_serial) if not dry_run else None
+        self.s2 = Screen2Form(device=self.d, serial=self.device_serial) if not dry_run else None
+        self.s3 = Screen3Camera(device=self.d, serial=self.device_serial) if not dry_run else None
+        self.s4 = Screen4Submit(device=self.d, serial=self.device_serial) if not dry_run else None
         self.client = NBPDCLClient() if NBPDCLClient else None
 
         if not dry_run and self.d:
@@ -306,13 +306,13 @@ class SmartRunner:
 
 def main():
     parser = argparse.ArgumentParser(description="Smart Engine V2 - Ground-Truth High-Speed Runner")
-    parser.add_argument("--mru", default="8", help="Target MRU code")
-    parser.add_argument("--cycle", default="OCT-2026", help="Billing cycle")
+    parser.add_argument("--mru", default=os.environ.get("NBPDCL_MRU_CODE", "18"), help="Target MRU code")
+    parser.add_argument("--cycle", default=os.environ.get("NBPDCL_CYCLE", "NOV-2026"), help="Billing cycle")
     parser.add_argument("--limit", type=int, default=1, help="Max consumers to process")
     parser.add_argument("--ca", default=None, help="Target a specific consumer account number")
     parser.add_argument("--device", default=None, help="Device serial / IP (Default: auto-detect)")
     parser.add_argument("--dry-run", action="store_true", help="Preview queue execution without hardware interaction")
-    parser.add_argument("--final-submit", action="store_true", help="Execute final bill generation in NBPDCL (Default: Stage-Only)")
+    parser.add_argument("--final-submit", "--final", dest="final_submit", action="store_true", help="Execute final bill generation in NBPDCL (Default: Stage-Only)")
     parser.add_argument("--apply-tuning", action="store_true", help="Apply batch smart average tuning to suggested reading (Default: False - pure baseline)")
     parser.add_argument("--min-floor", type=int, default=None, help="Minimum average consumption floor (kWh) for batch tuning")
     parser.add_argument("--max-ceiling", type=int, default=None, help="Maximum average consumption ceiling (kWh)")

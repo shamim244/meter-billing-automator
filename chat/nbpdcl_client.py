@@ -40,9 +40,12 @@ REVIEW_STATUSES = {"submitted", "doubt", "critical", "pending"}
 
 class NBPDCLClient:
     def __init__(self, base_url=None, api_key=None, auth_mode=None):
-        self.base_url = (base_url or os.environ.get(
-            "NBPDCL_API_BASE", "http://127.0.0.1:8000/api/v1"
-        )).rstrip("/")
+        raw_url = (base_url or os.environ.get(
+            "NBPDCL_API_BASE", "https://meterreaing.nexgentech.site/api/v1"
+        )).strip().rstrip("/")
+        if not raw_url.endswith("/api/v1"):
+            raw_url = f"{raw_url}/api/v1"
+        self.base_url = raw_url
         self.api_key = api_key or os.environ.get("NBPDCL_API_KEY", "")
         self.auth_mode = auth_mode or os.environ.get("NBPDCL_AUTH_MODE", "bearer")
 
