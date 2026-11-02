@@ -1,10 +1,36 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from smart_engine.device import SmartDevice
+from smart_engine.device import SmartDevice, resolve_device_serial, get_online_adb_devices
 
 class TestSmartDeviceWrapper(unittest.TestCase):
     def setUp(self):
         self.device = SmartDevice(serial="192.168.9.40:5555")
+
+    @patch("smart_engine.device.get_online_adb_devices")
+    def test_resolve_device_serial_explicit(self, mock_online):
+        mock_online.return_value = ["192.168.9.99:5555"]
+        res = resolve_device_serial("192.168.9.40:5555")
+        self.assertEqual(res, "192.168.9.40:5555")
+
+    @patch("smart_engine.device.get_online_adb_devices")
+    def test_resolve_device_serial_single_auto_detect(self, mock_online):
+        mock_online.return_value = ["192.168.9.45:5555"]
+        res = resolve_device_serial(None)
+        self.assertEqual(res, "192.168.9.45:5555")
+
+    @patch("smart_engine.device.get_online_adb_devices")
+    @patch.dict("os.environ", {"ADB_DEVICE_SERIAL": "device_b"})
+    def test_resolve_device_serial_multiple_with_env(self, mock_online):
+        mock_online.return_value = ["device_a", "device_b"]
+        res = resolve_device_serial(None)
+        self.assertEqual(res, "device_b")
+
+    @patch("smart_engine.device.get_online_adb_devices")
+    @patch.dict("os.environ", {}, clear=True)
+    def test_resolve_device_serial_fallback_default(self, mock_online):
+        mock_online.return_value = []
+        res = resolve_device_serial(None)
+        self.assertEqual(res, "192.168.9.40:5555")
 
     @patch("smart_engine.device.u2.connect")
     def test_connect_success(self, mock_u2_connect):

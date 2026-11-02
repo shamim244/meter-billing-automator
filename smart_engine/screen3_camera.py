@@ -7,9 +7,12 @@ import os
 import sys
 import time
 import uiautomator2 as u2
+from smart_engine.device import resolve_device_serial
 
 class Screen3Camera:
-    def __init__(self, device=None, serial="192.168.9.40:5555"):
+    def __init__(self, device=None, serial=None):
+        if not device:
+            serial = resolve_device_serial(serial)
         self.d = device or u2.connect(serial)
         self.serial = serial
 

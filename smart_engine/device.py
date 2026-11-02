@@ -1,13 +1,75 @@
 """
-device.py – High-speed device wrapper around uiautomator2 with fallback to ADB.
+device.py – High-speed device wrapper around uiautomator2 with auto-discovery and ADB fallback.
 """
+import os
 import time
 import subprocess
-import uiautomator2 as u2
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
+    import uiautomator2 as u2
+except ImportError:
+    u2 = None
+
+def get_online_adb_devices():
+    """
+    Returns a list of device serials/IPs currently connected and online in ADB.
+    """
+    try:
+        res = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=3)
+        devices = []
+        for line in res.stdout.strip().splitlines()[1:]:
+            parts = line.strip().split()
+            if len(parts) >= 2 and parts[1] == "device":
+                devices.append(parts[0])
+        return devices
+    except Exception:
+        return []
+
+def resolve_device_serial(explicit_serial=None):
+    """
+    Smart auto-discovery ladder for ADB device serial / IP:
+      1. Explicit argument passed via CLI / code (highest priority).
+      2. If not specified, scan ADB for online devices:
+         - If exactly 1 device is online, automatically connect to it!
+         - If multiple devices are online, prefer ADB_DEVICE_SERIAL from .env if online,
+           otherwise select the primary active device.
+      3. Fallback to ADB_DEVICE_SERIAL from .env or default '192.168.9.40:5555'.
+    """
+    if explicit_serial and str(explicit_serial).strip():
+        return str(explicit_serial).strip()
+
+    online_devices = get_online_adb_devices()
+    env_serial = os.environ.get("ADB_DEVICE_SERIAL", "").strip()
+
+    # If exactly 1 device is active in ADB, use it automatically
+    if len(online_devices) == 1:
+        detected = online_devices[0]
+        print(f"[+] Auto-detected active ADB device: {detected}")
+        return detected
+
+    # If multiple devices are active
+    if len(online_devices) > 1:
+        if env_serial and env_serial in online_devices:
+            print(f"[+] Multiple ADB devices found. Using configured device from .env: {env_serial}")
+            return env_serial
+        chosen = online_devices[0]
+        print(f"[!] Multiple ADB devices detected: {online_devices}. Auto-selecting: {chosen}")
+        return chosen
+
+    # If no devices are currently reported online by adb, fallback to .env or default
+    if env_serial:
+        return env_serial
+    return "192.168.9.40:5555"
 
 class SmartDevice:
-    def __init__(self, serial="192.168.9.40:5555"):
-        self.serial = serial
+    def __init__(self, serial=None):
+        self.serial = resolve_device_serial(serial)
         self.d = None
 
     def connect(self, timeout=5.0):

@@ -22,6 +22,7 @@ from smart_engine.screen1_search import Screen1Search
 from smart_engine.screen2_form import Screen2Form
 from smart_engine.screen3_camera import Screen3Camera
 from smart_engine.screen4_submit import Screen4Submit
+from smart_engine.device import resolve_device_serial
 
 try:
     import uiautomator2 as u2
@@ -29,12 +30,12 @@ except ImportError:
     u2 = None
 
 class SmartRunner:
-    def __init__(self, mru="8", cycle="OCT-2026", device_serial="192.168.9.40:5555",
+    def __init__(self, mru="8", cycle="OCT-2026", device_serial=None,
                  dry_run=False, final_submit=False, apply_tuning=False,
                  min_floor=None, max_ceiling=None, adjust_percent=None, ca=None):
         self.mru = str(mru)
         self.cycle = str(cycle)
-        self.device_serial = device_serial
+        self.device_serial = resolve_device_serial(device_serial) if not dry_run else (device_serial or "192.168.9.40:5555")
         self.dry_run = dry_run
         self.final_submit = final_submit
         self.apply_tuning = apply_tuning
@@ -309,7 +310,7 @@ def main():
     parser.add_argument("--cycle", default="OCT-2026", help="Billing cycle")
     parser.add_argument("--limit", type=int, default=1, help="Max consumers to process")
     parser.add_argument("--ca", default=None, help="Target a specific consumer account number")
-    parser.add_argument("--device", default="192.168.9.40:5555", help="Device serial / IP")
+    parser.add_argument("--device", default=None, help="Device serial / IP (Default: auto-detect)")
     parser.add_argument("--dry-run", action="store_true", help="Preview queue execution without hardware interaction")
     parser.add_argument("--final-submit", action="store_true", help="Execute final bill generation in NBPDCL (Default: Stage-Only)")
     parser.add_argument("--apply-tuning", action="store_true", help="Apply batch smart average tuning to suggested reading (Default: False - pure baseline)")
