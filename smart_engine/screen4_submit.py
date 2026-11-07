@@ -8,6 +8,7 @@ import time
 import uiautomator2 as u2
 from smart_engine.device import resolve_device_serial
 from smart_engine.ui_cache import UniversalUICache, fast_get_current_activity
+from smart_engine.telemetry import TelemetryManager
 
 class Screen4Submit:
     def __init__(self, device=None, serial=None):
@@ -16,8 +17,12 @@ class Screen4Submit:
         self.d = device or u2.connect(serial)
         self.serial = serial
         self.cache = UniversalUICache.get_instance()
+        self.telemetry = TelemetryManager.get_instance()
 
-    def handle_final_submit(self, do_submit=False, timeout=10.0):
+    def handle_final_submit(self, do_submit=False, timeout=10.0, trace_id=None):
+        t0 = time.time()
+        w, h = self.cache.get_resolution(self.d)
+
         if not do_submit:
             print("\n[*] [Screen 4] [STAGE-ONLY MODE] Bill is filled and validated on device.")
             print("  [*] Skipping final NBPDCL submit as requested (Safe Mode).")
@@ -26,11 +31,21 @@ class Screen4Submit:
                 self.d.app_start("in.phoenix.bpdcl", ".ConsumerSearchActivity", stop=False)
             except Exception:
                 self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
+
+            self.telemetry.log_interaction(
+                trace_id=trace_id,
+                step_num=12,
+                screen_name="Screen 4",
+                activity="ConsumerSearchActivity",
+                action_name="stage_only_reset",
+                duration_ms=int((time.time() - t0) * 1000),
+                status="SUCCESS",
+                prefill_state="stage_only"
+            )
             return True
 
         print("\n[*] [Screen 4] Executing Final NBPDCL Bill Generation...")
         # 1. Scroll to bottom of BillingManual (dynamic window size)
-        w, h = self.cache.get_resolution(self.d)
         mid_x = w // 2
         start_y = int(h * 0.75)
         end_y = int(h * 0.18)
@@ -40,16 +55,36 @@ class Screen4Submit:
         time.sleep(0.02)
 
         # 2. Tap Submit button (Cached -> Selector -> Scaled fallback)
+        t_sub0 = time.time()
         submit_btn = self.d(resourceId="in.phoenix.bpdcl:id/Submit")
         print("  [*] Tapping NBPDCL Submit button...")
-        if not self.cache.tap("screen4.submit_btn", self.d, selector_obj=submit_btn, fallback_coords=(293, 2267)):
+        tapped = self.cache.tap("screen4.submit_btn", self.d, selector_obj=submit_btn, fallback_coords=(293, 2267))
+        method_used = "cached_tap" if tapped else "click_exists"
+        if not tapped:
             if not submit_btn.click_exists(timeout=2.0):
                 try:
                     self.d.click(293, 2267)
+                    method_used = "fallback_click"
                 except Exception:
                     pass
 
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=12,
+            screen_name="Screen 4",
+            activity="BillingManual",
+            action_name="tap_nbpdcl_submit",
+            coord_x=293,
+            coord_y=2267,
+            ratio_x=round(293 / w, 3),
+            ratio_y=round(2267 / h, 3),
+            how_method=method_used,
+            duration_ms=int((time.time() - t_sub0) * 1000),
+            status="SUCCESS"
+        )
+
         # 3. Confirm YES on Alert dialog
+        t_yes0 = time.time()
         yes_btn = self.d(resourceId="android:id/button1")
         if not self.cache.tap("screen4.confirm_yes", self.d, selector_obj=yes_btn, fallback_coords=(900, 1388)):
             if not yes_btn.click_exists(timeout=2.0):
@@ -61,6 +96,20 @@ class Screen4Submit:
                 print("  [+] Confirmed YES on Bill Generation Dialog...")
         else:
             print("  [+] Confirmed YES on Bill Generation Dialog...")
+
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=13,
+            screen_name="Screen 4",
+            activity="AlertDialog",
+            action_name="confirm_bill_generation_yes",
+            coord_x=900,
+            coord_y=1388,
+            ratio_x=round(900 / w, 3),
+            ratio_y=round(1388 / h, 3),
+            duration_ms=int((time.time() - t_yes0) * 1000),
+            status="SUCCESS"
+        )
 
         # 4. Wait for BillPrintOnline1 via fast activity check
         t_start = time.time()
@@ -86,6 +135,20 @@ class Screen4Submit:
                     except Exception:
                         pass
             time.sleep(0.2)
+
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=14,
+            screen_name="Screen 4",
+            activity="BillPrintOnline1" if print_ready else "BillingManual",
+            action_name="bill_print_return",
+            coord_x=718,
+            coord_y=2305,
+            ratio_x=round(718 / w, 3),
+            ratio_y=round(2305 / h, 3),
+            duration_ms=int((time.time() - t_start) * 1000),
+            status="SUCCESS" if print_ready else "TIMEOUT"
+        )
 
         # Always ensure device returns to ConsumerSearchActivity for next batch item
         try:

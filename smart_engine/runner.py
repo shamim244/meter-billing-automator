@@ -24,6 +24,7 @@ from smart_engine.screen3_camera import Screen3Camera
 from smart_engine.screen4_submit import Screen4Submit
 from smart_engine.device import resolve_device_serial
 from smart_engine.ui_cache import UniversalUICache
+from smart_engine.telemetry import TelemetryManager
 
 try:
     import uiautomator2 as u2
@@ -73,6 +74,8 @@ class SmartRunner:
         self.s3 = Screen3Camera(device=self.d, serial=self.device_serial) if not dry_run else None
         self.s4 = Screen4Submit(device=self.d, serial=self.device_serial) if not dry_run else None
         self.client = NBPDCLClient() if NBPDCLClient else None
+        self.cache = UniversalUICache.get_instance()
+        self.telemetry = TelemetryManager.get_instance()
 
         if not dry_run and self.d:
             try:
@@ -120,34 +123,70 @@ class SmartRunner:
             print(f"  [*] [DRY-RUN] Simulated pipeline for CA {ca_number} -> Success")
             return True, "submitted"
 
+        # Determine screen resolution
+        res_str = "1080x2400"
+        try:
+            if self.d:
+                w, h = self.cache.get_resolution(self.d)
+                res_str = f"{w}x{h}"
+        except Exception:
+            pass
+
+        trace_id = None
+        if not self.dry_run:
+            trace_id = self.telemetry.start_trace(
+                ca_number=ca_number,
+                mru=str(self.mru),
+                cycle=str(self.cycle),
+                device_serial=str(self.device_serial or ""),
+                screen_resolution=res_str,
+                meter_type=meter_type,
+                base_kwh=reading_kwh
+            )
+
         # Screen 1: Fast Search CA and wait for BillingManual
-        if not self.s1.search_consumer(ca_number):
+        if not self.s1.search_consumer(ca_number, trace_id=trace_id):
             print("  [!] Screen 1 Search failed.")
+            if trace_id:
+                self.telemetry.finish_trace(trace_id, overall_status="failed_search", total_duration_ms=int((time.time() - t0) * 1000))
             return False, "pending"
 
         # Screen 2: Fill Form and Launch Camera
-        if not self.s2.fill_form_and_launch_camera(meter_type=meter_type):
+        if not self.s2.fill_form_and_launch_camera(meter_type=meter_type, trace_id=trace_id):
             print("  [!] Screen 2 Form failed.")
+            if trace_id:
+                self.telemetry.finish_trace(trace_id, overall_status="failed_form", total_duration_ms=int((time.time() - t0) * 1000))
             return False, "doubt"
 
         # Screen 3: Camera Capture, Reading Entry & Doubt Resolver
         is_defective = (str(meter_type).upper() == "DEFECTIVE")
         if is_defective:
-            s3_ok = self.s3.handle_defective_camera()
+            s3_ok = self.s3.handle_defective_camera(trace_id=trace_id)
         else:
-            s3_ok = self.s3.handle_camera_and_review(reading_kwh=reading_kwh)
+            s3_ok = self.s3.handle_camera_and_review(reading_kwh=reading_kwh, trace_id=trace_id)
 
         if not s3_ok:
             print("  [!] Screen 3 Camera / Review failed.")
+            if trace_id:
+                self.telemetry.finish_trace(trace_id, overall_status="failed_camera", total_duration_ms=int((time.time() - t0) * 1000))
             return False, "doubt"
 
         # Screen 4: Final Submit or Stage-Only Reset
-        if not self.s4.handle_final_submit(do_submit=self.final_submit):
+        if not self.s4.handle_final_submit(do_submit=self.final_submit, trace_id=trace_id):
             print("  [!] Screen 4 Submit / Reset failed.")
+            if trace_id:
+                self.telemetry.finish_trace(trace_id, overall_status="failed_submit", total_duration_ms=int((time.time() - t0) * 1000))
             return False, "doubt"
 
         total_time = round(time.time() - t0, 2)
         status = "submitted" if self.final_submit else "staged"
+        if trace_id:
+            self.telemetry.finish_trace(
+                trace_id=trace_id,
+                final_reading=reading_kwh,
+                overall_status=status,
+                total_duration_ms=int(total_time * 1000)
+            )
         print(f"\n>>> [SUCCESS] CA {ca_number} finished in {total_time}s (Status: {status})! <<<\n")
         return True, status
 

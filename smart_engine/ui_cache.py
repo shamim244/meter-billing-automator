@@ -186,6 +186,10 @@ class UniversalUICache:
         if key in self._ratio_cache:
             del self._ratio_cache[key]
 
+    def clear(self):
+        """Clears all cached coordinates."""
+        self.invalidate()
+
     def load_cache(self):
         if self.cache_file and os.path.exists(self.cache_file):
             try:

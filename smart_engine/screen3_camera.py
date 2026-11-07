@@ -9,6 +9,7 @@ import time
 import uiautomator2 as u2
 from smart_engine.device import resolve_device_serial
 from smart_engine.ui_cache import UniversalUICache, fast_get_current_activity
+from smart_engine.telemetry import TelemetryManager
 
 class Screen3Camera:
     def __init__(self, device=None, serial=None):
@@ -17,22 +18,35 @@ class Screen3Camera:
         self.d = device or u2.connect(serial)
         self.serial = serial
         self.cache = UniversalUICache.get_instance()
+        self.telemetry = TelemetryManager.get_instance()
 
-    def handle_camera_and_review(self, reading_kwh=1355, timeout=25.0):
+    def handle_camera_and_review(self, reading_kwh=1355, timeout=25.0, trace_id=None):
         t0 = time.time()
         print(f"\n[*] [Screen 3] MR Bharat: Fast Camera & Reading Entry ({reading_kwh} KWH)...")
+
+        w, h = self.cache.get_resolution(self.d)
 
         # 1. If on MeterReadingActivity with CAPTURE button, click it
         pre_capture = self.d(resourceId="in.coral.bpdcl:id/capture_readings_btn")
         if pre_capture.exists(timeout=0.3):
             print("  [1] Tapping initial CAPTURE button...")
             pre_capture.click()
+            self.telemetry.log_interaction(
+                trace_id=trace_id,
+                step_num=8,
+                screen_name="Screen 3",
+                activity="MeterReadingActivity",
+                action_name="tap_initial_capture_btn",
+                duration_ms=int((time.time() - t0) * 1000),
+                status="SUCCESS"
+            )
 
         # 2. Trigger Camera Shutter & Wait for Reading Input Dialog
         input_field = self.d(resourceId="in.coral.bpdcl:id/input")
         input_found = False
 
         for attempt in range(1, 4):
+            t_shutter0 = time.time()
             print(f"  [2] Camera Capture Attempt {attempt}/3...")
             shutter = self.d(resourceId="in.coral.bpdcl:id/captureImg")
             clicked = self.cache.tap("screen3.shutter", self.d, selector_obj=shutter, fallback_coords=(794, 2256))
@@ -50,11 +64,28 @@ class Screen3Camera:
                 except Exception:
                     pass
 
+            rx, ry = round(794 / w, 3), round(2256 / h, 3)
+
             # Wait up to 3.5s for input dialog or alert
             t_cap = time.time()
+            alert_msg = ""
             while time.time() - t_cap < 3.5:
                 if input_field.exists(timeout=0.1):
                     input_found = True
+                    self.telemetry.log_interaction(
+                        trace_id=trace_id,
+                        step_num=9,
+                        screen_name="Screen 3",
+                        activity="ScanMeterActivity",
+                        action_name=f"camera_shutter_attempt_{attempt}",
+                        coord_x=794,
+                        coord_y=2256,
+                        ratio_x=rx,
+                        ratio_y=ry,
+                        how_method="cached_tap" if clicked else "fallback",
+                        duration_ms=int((time.time() - t_shutter0) * 1000),
+                        status="SUCCESS"
+                    )
                     break
 
                 # Check if alert appeared
@@ -62,15 +93,44 @@ class Screen3Camera:
                 if alert.exists(timeout=0.05):
                     msg = self.d(resourceId="android:id/message").get_text() if self.d(resourceId="android:id/message").exists() else ""
                     print(f"  [!] Camera alert detected: '{msg}'")
+                    alert_msg = msg
                     if "previously saved" in msg.lower():
                         print("  [+] Accepting previously saved meter reading (tapping Yes)...")
                         self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
                         input_found = True
+                        self.telemetry.log_interaction(
+                            trace_id=trace_id,
+                            step_num=9,
+                            screen_name="Screen 3",
+                            activity="ScanMeterActivity",
+                            action_name=f"camera_shutter_attempt_{attempt}",
+                            coord_x=794,
+                            coord_y=2256,
+                            ratio_x=rx,
+                            ratio_y=ry,
+                            duration_ms=int((time.time() - t_shutter0) * 1000),
+                            status="POPUP_ACCEPTED",
+                            alert_message=msg
+                        )
                         break
                     else:
                         print("  [*] Dismissing alert and retrying shutter...")
                         self.d(resourceId="android:id/button1").click_exists(timeout=0.5)
                         self.d(resourceId="in.coral.bpdcl:id/flash_switch").click_exists(timeout=0.3)
+                        self.telemetry.log_interaction(
+                            trace_id=trace_id,
+                            step_num=9,
+                            screen_name="Screen 3",
+                            activity="ScanMeterActivity",
+                            action_name=f"camera_shutter_attempt_{attempt}",
+                            coord_x=794,
+                            coord_y=2256,
+                            ratio_x=rx,
+                            ratio_y=ry,
+                            duration_ms=int((time.time() - t_shutter0) * 1000),
+                            status="ALERT_INTERCEPTED",
+                            alert_message=msg
+                        )
                         break
                 time.sleep(0.1)
 
@@ -82,10 +142,21 @@ class Screen3Camera:
         in_review = "MeterReadingActivity" in cur_act
         if not input_found and not in_review and not input_field.wait(timeout=2.0):
             print("  [!] Reading input field not found after camera retries!")
+            self.telemetry.log_interaction(
+                trace_id=trace_id,
+                step_num=10,
+                screen_name="Screen 3",
+                activity=cur_act,
+                action_name="reading_input_missing",
+                duration_ms=int((time.time() - t0) * 1000),
+                status="FAILED",
+                alert_message="Input field missing after camera retries"
+            )
             return False
 
         # 3. Enter Reading and Save if input field is present
         if input_field.exists(timeout=0.2):
+            t_inj0 = time.time()
             print(f"  [3] Injecting KWH Reading: {reading_kwh}...")
             try:
                 input_field.click()
@@ -121,6 +192,21 @@ class Screen3Camera:
                 except Exception:
                     pass
 
+            self.telemetry.log_interaction(
+                trace_id=trace_id,
+                step_num=10,
+                screen_name="Screen 3",
+                activity="MeterReadingActivity",
+                action_name="inject_and_save_reading",
+                coord_x=870,
+                coord_y=1389,
+                ratio_x=round(870 / w, 3),
+                ratio_y=round(1389 / h, 3),
+                duration_ms=int((time.time() - t_inj0) * 1000),
+                status="SUCCESS",
+                prefill_state=str(reading_kwh)
+            )
+
         # 4. Multi-dialog Race Condition Watcher
         print("  [4] Watching for popups, revalidation alerts, and BillingManual return...")
         t_loop = time.time()
@@ -130,7 +216,17 @@ class Screen3Camera:
             # Check fast activity check first
             pkg, act = fast_get_current_activity(self.d)
             if "BillingManual" in act or ("in.phoenix.bpdcl" in pkg and "coral" not in pkg):
-                print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
+                elapsed = round(time.time() - t0, 2)
+                print(f"\n>>> [SUCCESS] Screen 3 Complete: Returned to BillingManual in {elapsed}s! <<<")
+                self.telemetry.log_interaction(
+                    trace_id=trace_id,
+                    step_num=11,
+                    screen_name="Screen 3",
+                    activity="BillingManual",
+                    action_name="return_to_billing_manual",
+                    duration_ms=int(elapsed * 1000),
+                    status="SUCCESS"
+                )
                 return True
 
             # Check for generic dialog confirmation button (button1: OK / Submit / Yes / Confirm)
@@ -140,6 +236,16 @@ class Screen3Camera:
                 btn_text = (sec_submit.get_text() or "Submit").strip()
                 print(f"  [+] Confirmation popup detected ('{btn_text}')! Tapping button...")
                 sec_submit.click_exists(timeout=0.5)
+                self.telemetry.log_interaction(
+                    trace_id=trace_id,
+                    step_num=11,
+                    screen_name="Screen 3",
+                    activity="MeterReadingActivity",
+                    action_name="confirm_popup_submit",
+                    duration_ms=int((time.time() - t_loop) * 1000),
+                    status="SUCCESS",
+                    alert_message=btn_text
+                )
                 t_loop = time.time()
                 time.sleep(0.2)
                 continue
@@ -149,6 +255,7 @@ class Screen3Camera:
                 try:
                     reval_btn = self.d(resourceId="in.coral.bpdcl:id/revalidate_btn")
                     if reval_btn.exists(timeout=0.05):
+                        t_rev0 = time.time()
                         print("  [*] Revalidation required! Executing dynamic override sequence...")
                         reval_btn.click_exists(timeout=1.0)
                         rep_btn = self.d(resourceId="in.coral.bpdcl:id/btn_report")
@@ -165,6 +272,20 @@ class Screen3Camera:
                                 print("  [*] Fallback tap for MR Bharat submit (792, 2231)...")
                                 self.d.click(792, 2231)
                         revalidation_handled = True
+                        self.telemetry.log_interaction(
+                            trace_id=trace_id,
+                            step_num=11,
+                            screen_name="Screen 3",
+                            activity="MeterReadingActivity",
+                            action_name="revalidation_override",
+                            coord_x=792,
+                            coord_y=2231,
+                            ratio_x=round(792 / w, 3),
+                            ratio_y=round(2231 / h, 3),
+                            duration_ms=int((time.time() - t_rev0) * 1000),
+                            status="OVERRIDE_EXECUTED",
+                            alert_message="Readings are correct"
+                        )
                         t_loop = time.time()
                         time.sleep(0.3)
                         continue
@@ -188,11 +309,23 @@ class Screen3Camera:
             time.sleep(0.08)
 
         print("  [!] Timed out in MR Bharat review/submit stage.")
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=11,
+            screen_name="Screen 3",
+            activity="MeterReadingActivity",
+            action_name="review_timeout",
+            duration_ms=int((time.time() - t0) * 1000),
+            status="TIMEOUT",
+            alert_message="Timed out in MR Bharat review stage"
+        )
         return False
 
-    def handle_defective_camera(self, timeout=20.0):
+    def handle_defective_camera(self, timeout=20.0, trace_id=None):
         t0 = time.time()
         print("\n[*] [Screen 3] MR Bharat: Fast Defective Meter Workflow (Defective/Burnt)...")
+
+        w, h = self.cache.get_resolution(self.d)
 
         # 1. Wait for Coral MeterReadingActivity (up to 4.0s)
         t_wait = time.time()
@@ -209,6 +342,20 @@ class Screen3Camera:
             if not defective_radio.click_exists(timeout=1.0):
                 if not self.d(textContains="Defective").click_exists(timeout=0.5):
                     self.d.click(822, 591)
+
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=8,
+            screen_name="Screen 3",
+            activity="MeterReadingActivity",
+            action_name="select_defective_radio",
+            coord_x=822,
+            coord_y=591,
+            ratio_x=round(822 / w, 3),
+            ratio_y=round(591 / h, 3),
+            status="SUCCESS",
+            prefill_state="Defective/Burnt"
+        )
         time.sleep(0.2)
 
         # 3. Select 'Actually Defective' from Abnormalities popup
@@ -218,6 +365,19 @@ class Screen3Camera:
             if not act_def.click_exists(timeout=1.5):
                 if not self.d(textContains="Actually Defective").click_exists(timeout=0.5):
                     self.d.click(563, 405)
+
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=9,
+            screen_name="Screen 3",
+            activity="MeterReadingActivity",
+            action_name="select_actually_defective_abnormality",
+            coord_x=563,
+            coord_y=405,
+            ratio_x=round(563 / w, 3),
+            ratio_y=round(405 / h, 3),
+            status="SUCCESS"
+        )
         time.sleep(0.2)
 
         # 4. Tap 'TAKE PHOTO' button
@@ -247,6 +407,19 @@ class Screen3Camera:
             print("  [*] Fallback tap for camera shutter (540, 2313)...")
             self.d.click(540, 2313)
 
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=10,
+            screen_name="Screen 3",
+            activity="CapturePhotoActivity",
+            action_name="defective_camera_shutter",
+            coord_x=540,
+            coord_y=2313,
+            ratio_x=round(540 / w, 3),
+            ratio_y=round(2313 / h, 3),
+            duration_ms=int((time.time() - t_cam) * 1000),
+            status="SUCCESS"
+        )
         time.sleep(0.3)
 
         # 6. Return to MeterReadingActivity review & Tap Coral Submit
@@ -256,7 +429,17 @@ class Screen3Camera:
             # Check if returned to BillingManual
             pkg, act = fast_get_current_activity(self.d)
             if "BillingManual" in act or ("in.phoenix.bpdcl" in pkg and "coral" not in pkg):
-                print(f"\n>>> [SUCCESS] Screen 3 Complete (Defective): Returned to BillingManual in {round(time.time() - t0, 2)}s! <<<")
+                elapsed = round(time.time() - t0, 2)
+                print(f"\n>>> [SUCCESS] Screen 3 Complete (Defective): Returned to BillingManual in {elapsed}s! <<<")
+                self.telemetry.log_interaction(
+                    trace_id=trace_id,
+                    step_num=11,
+                    screen_name="Screen 3",
+                    activity="BillingManual",
+                    action_name="return_to_billing_manual_defective",
+                    duration_ms=int(elapsed * 1000),
+                    status="SUCCESS"
+                )
                 return True
 
             # Check for generic dialog confirmation button

@@ -8,6 +8,7 @@ import time
 import uiautomator2 as u2
 from smart_engine.device import resolve_device_serial
 from smart_engine.ui_cache import UniversalUICache, fast_get_current_activity
+from smart_engine.telemetry import TelemetryManager
 
 class Screen1Search:
     def __init__(self, device=None, serial=None):
@@ -16,8 +17,9 @@ class Screen1Search:
         self.d = device or u2.connect(serial)
         self.serial = serial
         self.cache = UniversalUICache.get_instance()
+        self.telemetry = TelemetryManager.get_instance()
 
-    def search_consumer(self, ca_number, timeout=8.0):
+    def search_consumer(self, ca_number, timeout=8.0, trace_id=None):
         print(f"\n[*] [Screen 1] Fast Searching Consumer CA: {ca_number}...")
         try:
             self.d.screen_on()
@@ -34,6 +36,7 @@ class Screen1Search:
                 pass
 
         # 1. Start clean ConsumerSearchActivity directly
+        t0 = time.time()
         self.d.shell("am start -n in.phoenix.bpdcl/in.phoenix.bpdcl.ConsumerSearchActivity --activity-clear-top")
 
         # 2. Enter CA number into bh_AccNo1search
@@ -44,8 +47,10 @@ class Screen1Search:
             except Exception:
                 pass
             input_field.set_text(str(ca_number))
+            input_method = "set_text"
         else:
             self.d.shell(f"input tap 727 543; input text {ca_number}")
+            input_method = "shell_text"
 
         # Immediately dismiss soft keyboard so cons_search is visible and no keyboard touches occur
         try:
@@ -54,12 +59,45 @@ class Screen1Search:
         except Exception:
             pass
 
+        t_input_ms = int((time.time() - t0) * 1000)
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=1,
+            screen_name="Screen 1",
+            activity="ConsumerSearchActivity",
+            action_name="enter_ca_and_dismiss_keyboard",
+            how_method=input_method,
+            duration_ms=t_input_ms,
+            status="SUCCESS"
+        )
+
         # 3. Click Search button (Universal Cache -> Selector -> Scaled fallback)
+        t_click0 = time.time()
         search_btn = self.d(resourceId="in.phoenix.bpdcl:id/cons_search")
         tapped = self.cache.tap("screen1.search_btn", self.d, selector_obj=search_btn, fallback_coords=(450, 726))
+        method_used = "cached_tap" if tapped else "click_exists"
         if not tapped:
             if not search_btn.click_exists(timeout=0.5):
                 self.d.click(450, 726)
+                method_used = "fallback_click"
+
+        # Calculate coordinates for telemetry
+        w, h = self.cache.get_resolution(self.d)
+        rx, ry = round(450 / w, 3), round(726 / h, 3)
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=2,
+            screen_name="Screen 1",
+            activity="ConsumerSearchActivity",
+            action_name="tap_search_button",
+            coord_x=450,
+            coord_y=726,
+            ratio_x=rx,
+            ratio_y=ry,
+            how_method=method_used,
+            duration_ms=int((time.time() - t_click0) * 1000),
+            status="SUCCESS"
+        )
 
         # 4. Dynamic Event Loop: Wait for BillingManual OR Alert popup
         t_start = time.time()
@@ -69,7 +107,17 @@ class Screen1Search:
             ps_btn = self.d(resourceId="in.phoenix.bpdcl:id/PresentStatus1")
 
             if "BillingManual" in act or ps_btn.exists(timeout=0.05):
-                print(f"  [+] BillingManual reached and ready in {round(time.time() - t_start, 2)}s!")
+                elapsed_ms = int((time.time() - t_start) * 1000)
+                print(f"  [+] BillingManual reached and ready in {round(elapsed_ms / 1000, 2)}s!")
+                self.telemetry.log_interaction(
+                    trace_id=trace_id,
+                    step_num=3,
+                    screen_name="Screen 1",
+                    activity="BillingManual",
+                    action_name="transition_billing_manual",
+                    duration_ms=elapsed_ms,
+                    status="SUCCESS"
+                )
                 return True
 
             # If not yet at BillingManual, check if an error / warning alert appeared
@@ -82,11 +130,31 @@ class Screen1Search:
                 btn1 = self.d(resourceId="android:id/button1")
                 if btn1.exists(timeout=0.5):
                     btn1.click()
+                elapsed_ms = int((time.time() - t_start) * 1000)
+                self.telemetry.log_interaction(
+                    trace_id=trace_id,
+                    step_num=3,
+                    screen_name="Screen 1",
+                    activity="ConsumerSearchActivity",
+                    action_name="search_alert_dismissed",
+                    duration_ms=elapsed_ms,
+                    status="ALERT_INTERCEPTED",
+                    alert_message=f"{title}: {msg}"
+                )
                 return False
 
             time.sleep(0.05)
 
         print("  [!] Failed to reach BillingManual within timeout.")
+        self.telemetry.log_interaction(
+            trace_id=trace_id,
+            step_num=3,
+            screen_name="Screen 1",
+            activity="ConsumerSearchActivity",
+            action_name="search_timeout",
+            duration_ms=int((time.time() - t_start) * 1000),
+            status="TIMEOUT"
+        )
         return False
 
 if __name__ == "__main__":
